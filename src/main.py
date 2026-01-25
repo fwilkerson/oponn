@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from starlette.staticfiles import StaticFiles
 
-from .dependencies import CSRF_COOKIE_NAME, get_ballot_service, templates
+from .dependencies import CSRF_COOKIE_NAME
 from .models.exceptions import (
     BallotNotFoundError,
     InvalidOptionError,
@@ -14,17 +14,25 @@ from .routes import sse, ui
 
 app = FastAPI(title="Oponn Voting Service")
 
+# CSRF Skip Configuration
+CSRF_SKIP_PATHS = [
+    "/static",
+    "/ballots/",  # Handled by dynamic check for live-results
+]
+
 
 @app.middleware("http")
 async def csrf_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    # Skip for SSE and static files to avoid overhead and potential streaming issues
-    # with BaseHTTPMiddleware (e.g., buffering or connection lifecycle interference).
     path = request.url.path
-    if path.startswith("/static") or (
-        path.startswith("/ballots/") and "live-results" in path
-    ):
+
+    # Skip logic
+    should_skip = any(path.startswith(p) for p in CSRF_SKIP_PATHS if p != "/ballots/")
+    if not should_skip and path.startswith("/ballots/") and "live-results" in path:
+        should_skip = True
+
+    if should_skip:
         return await call_next(request)
 
     # Get existing token or generate a new one
@@ -52,13 +60,6 @@ async def csrf_middleware(
 
 # Infrastructure setup
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Register global helper for templates
-_global_service = get_ballot_service()
-templates.env.globals.update(get_ballot_status=_global_service.get_status)  # pyright: ignore[reportUnknownMemberType]
-
-# App state for tests (legacy support)
-app.state.ballot_service = _global_service
 
 # --- Exception Handlers ---
 

@@ -18,7 +18,7 @@ async def dashboard(
     service: Annotated[BallotService, Depends(get_ballot_service)],
     csrf_token: Annotated[str, Depends(get_csrf_token)],
 ):
-    ballots = service.list_ballots()
+    ballots = await service.list_ballots()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -125,8 +125,8 @@ async def process_create(
             end_time=et,
         )
     except ValidationError as e:
-        field_errors = {}
-        global_errors = []
+        field_errors: dict[str, str] = {}
+        global_errors: list[str] = []
 
         for err in e.errors():
             loc = err["loc"]
@@ -154,7 +154,7 @@ async def process_create(
         err_str = str(e).split("\n")[0]
         return render_error(error_msg=err_str)
 
-    new_ballot = service.create_ballot(ballot_create)
+    new_ballot = await service.create_ballot(ballot_create)
 
     if request.headers.get("HX-Request"):
         response = Response(status_code=204)
@@ -171,7 +171,7 @@ async def vote_page(
     service: Annotated[BallotService, Depends(get_ballot_service)],
     csrf_token: Annotated[str, Depends(get_csrf_token)],
 ):
-    ballot = service.get_ballot(ballot_id)
+    ballot = await service.get_ballot(ballot_id)
     return templates.TemplateResponse(
         request=request,
         name="vote.html",
@@ -191,10 +191,10 @@ async def process_vote(
     is_write_in = option == "__write_in__"
     vote_option = write_in_value if is_write_in else option
 
-    def render_error(
+    async def render_error(
         error_msg: str | None = None, field_errors: dict[str, str] | None = None
     ):
-        ballot = service.get_ballot(ballot_id)
+        ballot = await service.get_ballot(ballot_id)
         template_name = "vote.html"
         if request.headers.get("HX-Request"):
             template_name = "partials/vote_form.html"
@@ -216,7 +216,7 @@ async def process_vote(
 
     if is_write_in:
         if not vote_option:
-            return render_error(
+            return await render_error(
                 field_errors={"write_in_value": "Write-in value required"}
             )
         from bs4 import BeautifulSoup
@@ -226,15 +226,15 @@ async def process_vote(
     try:
         vote = Vote(option=cast(str, vote_option), is_write_in=is_write_in)
     except ValidationError as e:
-        field_errors = {}
+        field_errors: dict[str, str] = {}
         for err in e.errors():
             loc = err["loc"]
             msg = err["msg"].replace("Value error, ", "")
             if loc:
                 field_errors[str(loc[0])] = msg
-        return render_error(field_errors=field_errors)
+        return await render_error(field_errors=field_errors)
     except Exception as e:
-        return render_error(error_msg=str(e))
+        return await render_error(error_msg=str(e))
 
     await service.record_vote(ballot_id, vote)
 
@@ -253,8 +253,8 @@ async def results_page(
     service: Annotated[BallotService, Depends(get_ballot_service)],
     csrf_token: Annotated[str, Depends(get_csrf_token)],
 ):
-    ballot = service.get_ballot(ballot_id)
-    results = service.get_vote_counts(ballot_id)
+    ballot = await service.get_ballot(ballot_id)
+    results = await service.get_vote_counts(ballot_id)
     return templates.TemplateResponse(
         request=request,
         name="results.html",

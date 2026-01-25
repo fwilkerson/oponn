@@ -1,27 +1,19 @@
-# Oponn Project Improvements
+# Oponn Project Status
 
-## 1. Separation of Concerns (Priority: High)
-- [x] Implement Repository Pattern to decouple `BallotService` from in-memory storage.
-- [x] Remove `HTTPException` from `BallotService` and use domain-specific exceptions.
-- [x] Use FastAPI's Dependency Injection (`Depends`) for `BallotService`.
+## 1. Async Refactoring (Complete)
+- [x] Refactor `BallotRepository` interface and `InMemoryBallotRepository` implementation to be `async`.
+- [x] Update `BallotService` and routes to `await` all repository calls.
+- [x] Ensure `BallotService.record_vote` uses an `asyncio.Lock` per ballot to guarantee SSE update ordering.
 
-## 2. Project Structure (Priority: High)
-- [x] Split `main.py` into modular routes (e.g., `src/routes/ui.py`, `src/routes/sse.py`).
-- [x] Remove redundant `src/oponn/` directory.
+## 2. Testing Overhaul (Complete)
+- [x] Implement robust functional simulation tests using `httpx` and `BeautifulSoup` to verify HTMX behavior.
+- [x] Implement SSE stream monitoring tests with multi-line message accumulation.
+- [x] Add high-concurrency stress tests to verify thread-safety and data consistency.
+- [x] Adhere to YAGNI by removing brittle Docker/Playwright dependencies in favor of functional testing.
 
-## 3. Security & Validation (Priority: Medium)
-- [x] Implement CSRF protection for HTML forms.
-- [x] Add length constraints and sanitization for ballot measures and options.
-- [x] Implement write-in value sanitization.
-
-## 4. Concurrency & Reliability (Priority: Medium)
-- [x] Add thread-safety (locks) to in-memory data structures.
-- [x] Improve error handling UX by re-rendering forms with inline error messages using HTMX.
-
-## 5. Testing (Priority: Medium)
-- [x] Add unit tests for lower-level logic (e.g., `format_time_delta`).
-- [x] Implement SSE stream tests.
-- [x] Mock `BallotService` in UI integration tests.
-
-## 6. Maintenance (Priority: Low)
-- [x] Move embedded JavaScript from templates to a structured `static/js/app.js`.
+## 3. Maintenance & Cleanup (Complete)
+- [x] Move embedded JavaScript to a structured `static/js/app.js`.
+- [x] Remove legacy `app.state.ballot_service`.
+- [x] Add docstrings to core service and repository methods.
+- [x] Flexible CSRF skip logic for static and SSE routes.
+- [x] Passed all linting and type-checking standards (`make typecheck`).

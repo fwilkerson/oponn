@@ -1,18 +1,15 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 import pytest
 from src.main import app
-from src.models.ballot_models import BallotCreate
-
-
-from unittest.mock import MagicMock
+from src.models.ballot_models import BallotCreate, Ballot
 from src.dependencies import get_ballot_service
-from src.models.ballot_models import Ballot
 
 
 @pytest.mark.asyncio
 async def test_dashboard_with_mocked_service(client):
     # Setup mock service
-    mock_service = MagicMock()
+    mock_service = AsyncMock()
     mock_ballot = Ballot(
         ballot_id=999,
         measure="Mocked Ballot",
@@ -122,6 +119,8 @@ async def test_scheduled_ballot_validation(client):
 
 @pytest.mark.asyncio
 async def test_vote_button_states(client):
+    service = get_ballot_service()
+
     # Create a future ballot via service
     future_st = datetime.now(timezone.utc) + timedelta(days=1)
     bc = BallotCreate(
@@ -130,7 +129,7 @@ async def test_vote_button_states(client):
         allow_write_in=False,
         start_time=future_st,
     )
-    ballot = app.state.ballot_service.create_ballot(bc)
+    ballot = await service.create_ballot(bc)
 
     response = client.get(f"/vote/{ballot.ballot_id}")
     assert 'button type="submit" disabled' in response.text
@@ -146,7 +145,7 @@ async def test_vote_button_states(client):
         start_time=past_st,
         end_time=past_et,
     )
-    ballot_ended = app.state.ballot_service.create_ballot(bc_ended)
+    ballot_ended = await service.create_ballot(bc_ended)
 
     response = client.get(f"/vote/{ballot_ended.ballot_id}")
     assert 'button type="submit" disabled' in response.text
