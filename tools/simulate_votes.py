@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup # type: ignore
 def simulate(ballot_id, num_votes=10):
     base_url = "http://localhost:8000"
     
-    with httpx.Client(base_url=base_url) as client:
+    with httpx.Client(base_url=base_url, follow_redirects=True) as client:
         # Get ballot options by parsing the vote page
         try:
             response = client.get(f"/vote/{ballot_id}")
@@ -26,11 +26,18 @@ def simulate(ballot_id, num_votes=10):
             
             allow_write_in = soup.find('input', {'value': '__write_in__'}) is not None
             
+            # Get CSRF token from cookie
+            csrf_token = client.cookies.get("oponn_csrf_token")
+            if not csrf_token:
+                print("Warning: No CSRF token found in cookies. Simulation might fail.")
+            
         except Exception as e:
             print(f"Error fetching ballot {ballot_id} from UI: {e}")
             return
 
         print(f"Simulating {num_votes} votes for ballot: {measure}")
+        
+        headers = {"X-CSRF-Token": csrf_token} if csrf_token else {}
         
         for i in range(num_votes):
             if allow_write_in and random.random() < 0.2:
@@ -45,7 +52,7 @@ def simulate(ballot_id, num_votes=10):
                 
             try:
                 # Use the UI endpoint (form submission)
-                res = client.post(f"/vote/{ballot_id}", data=data)
+                res = client.post(f"/vote/{ballot_id}", data=data, headers=headers)
                 res.raise_for_status()
                 print(f"Vote {i+1}/{num_votes}: Cast for '{display_option}'")
             except Exception as e:

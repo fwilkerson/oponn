@@ -7,12 +7,13 @@ from .repositories.ballot_repository import InMemoryBallotRepository
 # Infrastructure singletons
 templates = Jinja2Templates(directory="templates")
 ballot_repo = InMemoryBallotRepository()
+_ballot_service = BallotService(ballot_repo)
 
 CSRF_COOKIE_NAME = "oponn_csrf_token"
 
 
 def get_ballot_service() -> BallotService:
-    return BallotService(ballot_repo)
+    return _ballot_service
 
 
 async def validate_csrf(

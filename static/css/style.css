@@ -260,6 +260,11 @@ button:disabled:hover {
     margin-bottom: 2rem;
 }
 
+.radio-item {
+    display: flex;
+    flex-direction: column;
+}
+
 .radio-label {
     display: flex;
     align-items: center;
@@ -269,6 +274,11 @@ button:disabled:hover {
     border: 1px solid var(--border-color);
     border-radius: 4px;
     transition: all 0.2s ease;
+}
+
+.radio-label.invalid {
+    border-color: var(--error);
+    background-color: rgba(191, 97, 106, 0.05);
 }
 
 .radio-label:hover {
@@ -409,30 +419,6 @@ input.invalid, select.invalid {
 
 
 
-
-
-
-.radio-group.invalid-group {
-
-
-
-    border: 1px solid var(--error);
-
-
-
-    padding: 0.5rem;
-
-
-
-    border-radius: 4px;
-
-
-
-    background-color: rgba(191, 97, 106, 0.05);
-
-
-
-}
 
 
 

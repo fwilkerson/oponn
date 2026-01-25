@@ -4,7 +4,7 @@
 help:
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "[36m%-20s[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-run: ## Run the FastAPI application
+start: ## Run the FastAPI application
 	poetry run uvicorn src.main:app --reload
 
 test: ## Run tests

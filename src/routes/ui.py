@@ -255,11 +255,12 @@ async def results_page(
     request: Request,
     ballot_id: int,
     service: Annotated[BallotService, Depends(get_ballot_service)],
+    csrf_token: Annotated[str, Depends(get_csrf_token)],
 ):
     ballot = service.get_ballot(ballot_id)
     results = service.get_vote_counts(ballot_id)
     return templates.TemplateResponse(
         request=request,
         name="results.html",
-        context={"ballot": ballot, "results": results},
+        context={"ballot": ballot, "results": results, "csrf_token": csrf_token},
     )

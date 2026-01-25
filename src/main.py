@@ -19,24 +19,33 @@ app = FastAPI(title="Oponn Voting Service")
 async def csrf_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
+    # Skip for SSE and static files to avoid overhead and potential streaming issues
+    # with BaseHTTPMiddleware (e.g., buffering or connection lifecycle interference).
+    path = request.url.path
+    if path.startswith("/static") or (
+        path.startswith("/ballots/") and "live-results" in path
+    ):
+        return await call_next(request)
+
     # Get existing token or generate a new one
     token = request.cookies.get(CSRF_COOKIE_NAME)
     if not token:
         token = secrets.token_urlsafe(32)
 
-    # Make token available to the request (so routes/templates can use it)
+    # Make token available to the request state for dependencies and templates
     request.state.csrf_token = token
 
     response = await call_next(request)
 
-    # Always set the cookie to ensure persistence
-    response.set_cookie(
-        CSRF_COOKIE_NAME,
-        token,
-        httponly=True,
-        samesite="lax",
-        secure=False,  # Set to True in production
-    )
+    # Ensure the CSRF cookie is set if not already present
+    if CSRF_COOKIE_NAME not in request.cookies:
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            token,
+            httponly=True,
+            samesite="lax",
+            secure=False,  # Set to True in production with HTTPS
+        )
 
     return response
 
