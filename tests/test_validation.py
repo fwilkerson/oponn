@@ -78,7 +78,7 @@ def test_csrf_protection(client):
     # Ensure environment variable doesn't disable it
     old_val = os.environ.get("OPONN_SKIP_CSRF")
     os.environ["OPONN_SKIP_CSRF"] = "false"
-    
+
     # Enable CSRF check for this test
     app.dependency_overrides.pop(validate_csrf, None)
 

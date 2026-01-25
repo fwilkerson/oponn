@@ -1,23 +1,54 @@
+import os
+from collections.abc import AsyncGenerator
 from typing import Annotated
-from fastapi import Request, Form, Header, HTTPException
-from fastapi.templating import Jinja2Templates
-from .services.ballot_service import BallotService
-from .repositories.ballot_repository import InMemoryBallotRepository
 
-# Infrastructure singletons - ENSURE THESE ARE THE ONLY INSTANCES
-# so background threads and main threads share the same in-memory state.
+from fastapi import Depends, Form, Header, HTTPException, Request
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .database import SessionLocal
+from .repositories.ballot_repository import InMemoryBallotRepository
+from .repositories.sql_repository import SqlBallotRepository
+from .services.ballot_service import BallotService
+
+# Infrastructure singletons
 templates = Jinja2Templates(directory="templates")
-_ballot_repo = InMemoryBallotRepository()
-_ballot_service = BallotService(_ballot_repo)
 
 # Register template globals
 templates.env.globals.update(get_ballot_status=BallotService.get_status)  # pyright: ignore[reportUnknownMemberType]
 
 CSRF_COOKIE_NAME = "oponn_csrf_token"
 
+# In-memory repo singleton for when DATABASE_URL is not set
+_in_memory_repo = InMemoryBallotRepository()
+_in_memory_service = BallotService(_in_memory_repo)
+_ballot_service = _in_memory_service  # Exported for tests
 
-def get_ballot_service() -> BallotService:
-    return _ballot_service
+
+async def get_db_session() -> AsyncGenerator[AsyncSession | None, None]:
+    """Dependency for getting a DB session."""
+    if SessionLocal is None:
+        yield None
+        return
+    async with SessionLocal() as session:
+        yield session
+
+
+def get_ballot_service(
+    session: Annotated[AsyncSession | None, Depends(get_db_session)] = None,
+) -> BallotService:
+    """
+    Dependency that returns a BallotService.
+    If DATABASE_URL is set, it uses SqlBallotRepository.
+    Otherwise, it uses the global InMemoryBallotRepository.
+    """
+    if os.getenv("DATABASE_URL"):
+        if session is None:
+            # This might happen if called outside of FastAPI dependency injection
+            # but with DATABASE_URL set. We want to avoid this in tests.
+            raise RuntimeError("DATABASE_URL set but no session provided")
+        return BallotService(SqlBallotRepository(session))
+    return _in_memory_service
 
 
 async def get_csrf_token(request: Request) -> str:
@@ -29,7 +60,6 @@ async def validate_csrf(
     x_csrf_token_form: Annotated[str | None, Form(alias="X-CSRF-Token")] = None,
     x_csrf_token_header: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
 ):
-    import os
     if os.getenv("OPONN_SKIP_CSRF") == "true":
         return
 

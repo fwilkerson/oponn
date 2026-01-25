@@ -7,8 +7,11 @@ help:
 start: ## Run the FastAPI application
 	poetry run ./dev.py start
 
-test: ## Run tests (use poetry run ./dev.py test [args] for more flexibility)
-	poetry run ./dev.py test
+test: ## Run tests in-memory (fast)
+	unset DATABASE_URL && poetry run ./dev.py test --ignore=tests/test_sql_repo.py
+
+test-sql: ## Run PostgreSQL integration tests
+	poetry run ./dev.py test tests/test_sql_repo.py
 
 lint: ## Automatically fix linting issues with Ruff
 	poetry run ./dev.py lint

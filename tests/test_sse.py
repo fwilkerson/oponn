@@ -2,6 +2,7 @@ import httpx
 import pytest
 import asyncio
 
+
 @pytest.mark.asyncio
 async def test_sse_updates_robust(server_url):
     """
@@ -14,20 +15,20 @@ async def test_sse_updates_robust(server_url):
             data={
                 "measure": "SSE Test Ballot",
                 "options_raw": "Yes, No",
-                "duration_mins": "60"
+                "duration_mins": "60",
             },
-            headers={"HX-Request": "true"}
+            headers={"HX-Request": "true"},
         )
         assert create_resp.status_code == 204
         ballot_id = int(create_resp.headers["HX-Redirect"].split("/")[-1])
 
         # 2. Subscribe to SSE
         sse_url = f"{server_url}/ballots/{ballot_id}/live-results"
-        
+
         async with client.stream("GET", sse_url) as response:
             assert response.status_code == 200
             assert "text/event-stream" in response.headers["content-type"]
-            
+
             async def get_messages():
                 current_msg = ""
                 async for line in response.aiter_lines():
@@ -38,7 +39,7 @@ async def test_sse_updates_robust(server_url):
                         current_msg = ""
 
             messages = get_messages()
-            
+
             # First event: initial counts
             async for msg in messages:
                 assert "Yes" in msg or "No" in msg
@@ -48,17 +49,16 @@ async def test_sse_updates_robust(server_url):
             async def cast_vote():
                 await asyncio.sleep(0.5)
                 await client.post(
-                    f"{server_url}/vote/{ballot_id}",
-                    data={"option": "Yes"}
+                    f"{server_url}/vote/{ballot_id}", data={"option": "Yes"}
                 )
-            
+
             vote_task = asyncio.create_task(cast_vote())
-            
+
             # 4. Wait for the second event
             async for msg in messages:
                 if "1" in msg and "Yes" in msg:
                     break
             else:
                 pytest.fail("Did not receive SSE update")
-            
+
             await vote_task

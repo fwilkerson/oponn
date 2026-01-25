@@ -24,39 +24,63 @@ def start():
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
-def test(ctx: typer.Context):
+def test(
+    ctx: typer.Context,
+):
     """Run tests (supports all pytest arguments)."""
-    command = [sys.executable, "-m", "pytest", "tests/"]
+    command = [sys.executable, "-m", "pytest"]
     if ctx.args:
         command.extend(ctx.args)
+    else:
+        command.append("tests/")
     run_cmd(command)
 
 
 @app.command()
 def lint():
     """Lint and fix code with Ruff."""
-    run_cmd([sys.executable, "-m", "ruff", "check", "src/", "tests/", "--fix"])
+    run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "src/",
+            "tests/",
+            "tools/",
+            "dev.py",
+            "--fix",
+        ]
+    )
 
 
 @app.command()
 def format():
     """Format code with Ruff."""
-    run_cmd([sys.executable, "-m", "ruff", "format", "src/", "tests/"])
+    run_cmd(
+        [sys.executable, "-m", "ruff", "format", "src/", "tests/", "tools/", "dev.py"]
+    )
 
 
 @app.command()
 def typecheck():
     """Check types with basedpyright."""
-    run_cmd(["basedpyright", "src"])
+    run_cmd(["basedpyright", "src", "tools", "dev.py"])
 
 
 @app.command()
 def simulate(
-    ballot_id: int = typer.Argument(..., help="ID of the ballot to simulate votes for"),
-    num_votes: int = typer.Argument(10, help="Number of votes to cast"),
+    ballot_id: int = typer.Argument(..., help="ID of the ballot to simulate votes for"),  # pyright: ignore[reportCallInDefaultInitializer]
+    num_votes: int = typer.Argument(10, help="Number of votes to cast"),  # pyright: ignore[reportCallInDefaultInitializer]
 ):
     """Simulate votes for a specific ballot."""
     run_cmd([sys.executable, "tools/simulate_votes.py", str(ballot_id), str(num_votes)])
+
+
+@app.command()
+def migrate():
+    """Generate initial database migration using a temporary Postgres container."""
+    run_cmd([sys.executable, "tools/generate_migration.py"])
 
 
 if __name__ == "__main__":

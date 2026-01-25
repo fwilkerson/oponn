@@ -21,11 +21,12 @@ class BallotService:
     """
 
     repository: BallotRepository
+    # Class-level state to ensure SSE and locking consistency across request-scoped instances
+    _sse_queues: dict[int, list[asyncio.Queue[list[Tally]]]] = {}
+    _locks: dict[int, asyncio.Lock] = {}
 
     def __init__(self, repository: BallotRepository):
         self.repository = repository
-        self.sse_queues: dict[int, list[asyncio.Queue[list[Tally]]]] = {}
-        self._locks: dict[int, asyncio.Lock] = {}
 
     def _get_lock(self, ballot_id: int) -> asyncio.Lock:
         """Get or create an asyncio.Lock for a specific ballot."""
@@ -40,7 +41,7 @@ class BallotService:
     async def create_ballot(self, ballot_create: BallotCreate) -> Ballot:
         """Create a new ballot and initialize its SSE client list."""
         ballot = await self.repository.create(ballot_create)
-        self.sse_queues[ballot.ballot_id] = []
+        self._sse_queues[ballot.ballot_id] = []
         return ballot
 
     async def get_ballot(self, ballot_id: int) -> Ballot:
@@ -77,7 +78,7 @@ class BallotService:
 
             # Notify SSE clients
             updated_counts = await self.get_vote_counts(ballot_id)
-            for queue in self.sse_queues.get(ballot_id, []):
+            for queue in self._sse_queues.get(ballot_id, []):
                 await queue.put(updated_counts)
 
     async def get_vote_counts(self, ballot_id: int) -> list[Tally]:
@@ -90,18 +91,18 @@ class BallotService:
         """Register a new SSE client for a ballot and return its event queue."""
         _ = await self.get_ballot(ballot_id)
         queue: asyncio.Queue[list[Tally]] = asyncio.Queue()
-        if ballot_id not in self.sse_queues:
-            self.sse_queues[ballot_id] = []
-        self.sse_queues[ballot_id].append(queue)
+        if ballot_id not in self._sse_queues:
+            self._sse_queues[ballot_id] = []
+        self._sse_queues[ballot_id].append(queue)
         return queue
 
     async def unregister_sse_client(
         self, ballot_id: int, queue: asyncio.Queue[list[Tally]]
     ):
         """Remove an SSE client's queue from a ballot's notification list."""
-        if ballot_id in self.sse_queues:
+        if ballot_id in self._sse_queues:
             try:
-                self.sse_queues[ballot_id].remove(queue)
+                self._sse_queues[ballot_id].remove(queue)
             except ValueError:
                 pass
 
