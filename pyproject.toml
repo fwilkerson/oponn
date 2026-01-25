@@ -25,6 +25,10 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 timeout = 10
+filterwarnings = [
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+    "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
+]
 
 [tool.basedpyright]
 venvPath = "."

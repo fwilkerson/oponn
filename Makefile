@@ -1,20 +1,20 @@
-.PHONY: help run test lint lint-fix check-types
+.PHONY: help run test lint format typecheck
 .DEFAULT_GOAL := help
 
 help:
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "[36m%-20s[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 start: ## Run the FastAPI application
-	poetry run uvicorn src.main:app --reload
+	poetry run ./dev.py start
 
-test: ## Run tests
-	poetry run python -m pytest tests/
+test: ## Run tests (use poetry run ./dev.py test [args] for more flexibility)
+	poetry run ./dev.py test
 
 lint: ## Automatically fix linting issues with Ruff
-	poetry run python -m ruff check src/ tests/ --fix
+	poetry run ./dev.py lint
 
 format: ## Automatically format files with Ruff
-	poetry run python -m ruff format src/ tests/
+	poetry run ./dev.py format
 
 typecheck: ## Check types with basedpyright
-	poetry run basedpyright src/
+	poetry run ./dev.py typecheck

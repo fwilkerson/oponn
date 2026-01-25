@@ -1,65 +1,51 @@
-# Oponn
+# Oponn Agent Guide
 
-Oponn is a modern, lightweight voting service designed with a **Server-Informed UI (SIUI)** architecture. It leverages **FastAPI** for the backend and **HTMX** for seamless, declarative frontend interactivity, all styled with a signature "Gemini-inspired" terminal aesthetic.
+This document provides critical context for Gemini agents to maintain and evolve Oponn effectively.
 
-## Project Overview
+## 1. Architectural Philosophy: Server-Informed UI (SIUI)
 
--   **Backend:** FastAPI (Python 3.14+)
--   **Frontend:** Jinja2 Templates + HTMX (Server-Sent Events for live updates)
--   **Styling:** Custom CSS with a "Deep Charcoal" and "Gemini Purple" theme.
--   **Real-time Features:** Live vote results pushed via Server-Sent Events (SSE).
--   **Architecture:** SIUI (Server-Informed UI) where the server manages state and navigation, and HTMX handles partial page updates and "boosted" links.
+Oponn follows a **Server-Informed UI** pattern. The server is the source of truth for both data and navigation state.
 
-## Building and Running
+- **FastAPI + HTMX**: Avoid heavy client-side state. Use HTMX for partial DOM swaps (`HX-Target`) and server-side redirects (`HX-Redirect`).
+- **Async-First**: The entire stack—from `BallotRepository` to `BallotService`—is fully `async`.
+- **SSE for Live Updates**: Live results are pushed via Server-Sent Events. The client (`static/js/app.js`) handles reconnection and DOM updates based on SSE triggers.
 
-### Prerequisites
--   Python 3.12+
--   Poetry (Dependency management)
+## 2. Core Technical Constraints
 
-### Setup
-```bash
-# Install dependencies
-poetry install
-```
+### Concurrency & Consistency
+- **Per-Ballot Locking**: `BallotService` uses an `asyncio.Lock` per `ballot_id` during the `record_vote` process. This ensures that SSE broadcast order matches the persistence order and prevents race conditions in the in-memory tallies.
+- **Singleton Service**: The app uses a global singleton for `BallotService` to ensure background SSE threads and request threads share the same state.
 
-### Running the Application
-```bash
-# Start the development server
-make run
-# OR
-poetry run fastapi dev src/main.py
-```
+### Type Safety
+- **basedpyright**: We use strict type checking. Ensure all new code passes `make typecheck`. Avoid `Any` where possible.
+- **Pydantic Models**: Use models in `src/models/` for data validation and API schemas.
 
-### Testing
-```bash
-# Run all tests
-make test
-# OR
-poetry run pytest
-```
+## 3. Testing Strategy: Functional Simulation
 
-### Development Workflow
-```bash
-# Linting
-make lint
+**Do NOT use Playwright or Docker/Testcontainers.** To remain environment-agnostic and fast, we use a "Functional Simulation" approach.
 
-# Formatting
-make format
+- **Httpx + BeautifulSoup**: Tests in `tests/test_e2e.py` simulate HTMX requests by setting headers like `HX-Request: true` and parsing the resulting HTML fragments.
+- **SSE Verification**: SSE streams are tested by monitoring the `httpx` stream and accumulating multi-line `data:` blocks until an empty line is reached. This correctly handles the `sse-starlette` framing.
+- **Test Isolation**: A global `reset_service` fixture in `conftest.py` clears the singleton repository before every test.
 
-# Typechecking
-make typecheck
-```
+## 4. Development Tooling
 
-### Simulating Votes
-To see live results in action, use the provided simulation tool:
-```bash
-poetry run python tools/simulate_votes.py <ballot_id> <num_votes>
-```
+The primary entry point is `dev.py`, built with **Typer**. The `Makefile` acts as a thin wrapper for compatibility.
 
-## Development Conventions
+- `make start` / `./dev.py start`: Runs the uvicorn dev server.
+- `make test` / `./dev.py test`: Runs the test suite.
+- `./dev.py test -k <pattern>`: Runs specific tests (a key feature for agents).
+- `make lint` / `make format`: Ruff-based quality gates.
+- `make typecheck`: Strict basedpyright check.
 
--   **Architecture:** Prefer server-side logic and template rendering. Use HTMX for any "dynamic" requirements like form submissions and live updates.
--   **Styling:** Follow the established CSS variables in `static/css/style.css` for consistent branding.
--   **Models:** Use Pydantic models (`src/models/ballot_models.py`) for all data transfer between the service and API layers.
--   **Testing:** New features should include corresponding tests in `tests/`. Use `TestClient` for integration testing of SIUI routes.
--   **Type Safety:** The project uses `basedpyright`. Ensure new code passes `make typecheck`.
+## 5. UI & Styling Conventions
+
+- **Theme**: "Deep Charcoal" and "Gemini Purple" terminal aesthetic.
+- **CSS**: Variables are defined in `static/css/style.css`. Always use these variables instead of hardcoded hex codes to maintain the theme.
+- **Partials**: HTML fragments intended for HTMX swaps reside in `templates/partials/`.
+
+## 6. Critical Operational Notes for Agents
+
+- **CSRF**: CSRF is bypassed in test environments via the `OPONN_SKIP_CSRF` environment variable. Ensure this is respected in `conftest.py`.
+- **YAGNI**: Do not add dependencies (like Redis or Postgres) unless explicitly requested. The current `InMemoryBallotRepository` is intentional for the prototype stage.
+- **SSE Cleanup**: When implementing new SSE features, always ensure that client disconnects (detected via `anyio.get_cancelled_stack_group`) trigger proper queue unregistration in the service.
