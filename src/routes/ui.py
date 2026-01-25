@@ -5,15 +5,11 @@ from pydantic import ValidationError
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from ..dependencies import get_ballot_service, templates, validate_csrf
+from ..dependencies import get_ballot_service, templates, validate_csrf, get_csrf_token
 from ..models.ballot_models import BallotCreate, Vote
 from ..services.ballot_service import BallotService
 
 router = APIRouter()
-
-
-async def get_csrf_token(request: Request):
-    return getattr(request.state, "csrf_token", "")
 
 
 @router.get("/", response_class=HTMLResponse)

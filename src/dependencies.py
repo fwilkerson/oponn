@@ -16,6 +16,10 @@ def get_ballot_service() -> BallotService:
     return _ballot_service
 
 
+async def get_csrf_token(request: Request) -> str:
+    return getattr(request.state, "csrf_token", "")
+
+
 async def validate_csrf(
     request: Request,
     x_csrf_token_form: Annotated[str | None, Form(alias="X-CSRF-Token")] = None,

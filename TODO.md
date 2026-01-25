@@ -19,9 +19,9 @@
 - [x] Improve error handling UX by re-rendering forms with inline error messages using HTMX.
 
 ## 5. Testing (Priority: Medium)
-- [ ] Add unit tests for lower-level logic (e.g., `format_time_delta`).
-- [ ] Implement SSE stream tests.
-- [ ] Mock `BallotService` in UI integration tests.
+- [x] Add unit tests for lower-level logic (e.g., `format_time_delta`).
+- [x] Implement SSE stream tests.
+- [x] Mock `BallotService` in UI integration tests.
 
 ## 6. Maintenance (Priority: Low)
-- [ ] Move embedded JavaScript from templates to a structured `static/js/app.js`.
+- [x] Move embedded JavaScript from templates to a structured `static/js/app.js`.

@@ -4,6 +4,37 @@ from src.main import app
 from src.models.ballot_models import BallotCreate
 
 
+from unittest.mock import MagicMock
+from src.dependencies import get_ballot_service
+from src.models.ballot_models import Ballot
+
+
+@pytest.mark.asyncio
+async def test_dashboard_with_mocked_service(client):
+    # Setup mock service
+    mock_service = MagicMock()
+    mock_ballot = Ballot(
+        ballot_id=999,
+        measure="Mocked Ballot",
+        options=["Yes", "No"],
+        allow_write_in=False,
+        start_time=datetime.now(timezone.utc),
+    )
+    mock_service.list_ballots.return_value = [mock_ballot]
+
+    # Override dependency
+    app.dependency_overrides[get_ballot_service] = lambda: mock_service
+
+    try:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "Mocked Ballot" in response.text
+        mock_service.list_ballots.assert_called_once()
+    finally:
+        # Clean up override
+        app.dependency_overrides.pop(get_ballot_service)
+
+
 @pytest.mark.asyncio
 async def test_dashboard_and_create_navigation(client):
     # Check dashboard
