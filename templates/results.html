@@ -1,0 +1,21 @@
+{% extends "layout.html" %}
+
+{% block title %}oponn | results - {{ ballot.measure }}{% endblock %}
+
+{% block content %}
+<section>
+    <h2>results: {{ ballot.measure }}</h2>
+    
+    <div hx-ext="sse" sse-connect="/ballots/{{ ballot.ballot_id }}/live-results" sse-swap="message">
+        {% include "partials/vote_results.html" %}
+    </div>
+    
+    <div style="margin-top: 3rem; display: flex; justify-content: space-between; align-items: center;">
+        <a href="/vote/{{ ballot.ballot_id }}" class="button">back_to_voting</a>
+        <div class="status-indicator" style="color: var(--text-secondary); font-size: 0.7rem;">
+            <span class="status-dot pulse" style="background-color: var(--accent-primary);"></span>
+            live_feed_active
+        </div>
+    </div>
+</section>
+{% endblock %}

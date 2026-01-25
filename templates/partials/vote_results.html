@@ -1,0 +1,15 @@
+<div class="results-list" style="margin-top: 1.5rem;">
+    {% set total_votes = results | map(attribute='count') | sum %}
+    {% for res in results %}
+    <div class="progress-container">
+        <div class="progress-header">
+            <span style="color: var(--text-primary); font-size: 0.9rem;">{{ res.option }}</span>
+            <span style="color: var(--accent-secondary); font-weight: 700; font-size: 0.9rem;">{{ res.count }}</span>
+        </div>
+        <div class="progress-bar-bg">
+            {% set percent = (res.count / total_votes * 100) if total_votes > 0 else 0 %}
+            <div class="progress-bar-fill" style="width: {{ percent }}%;"></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>

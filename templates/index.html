@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+
+{% block title %}oponn | dashboard{% endblock %}
+
+{% block content %}
+<section>
+    <h2>active_ballots</h2>
+    
+    {% if ballots %}
+    <div class="ballot-list">
+        {% for ballot in ballots %}
+        <div class="list-item">
+            <div>
+                <div class="ballot-info-primary">{{ ballot.measure }}</div>
+                <div class="ballot-info-secondary">id: {{ ballot.ballot_id }}</div>
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <a href="/vote/{{ ballot.ballot_id }}" style="color: var(--accent-secondary); font-size: 0.8rem; text-decoration: none;">vote</a>
+                <a href="/results/{{ ballot.ballot_id }}" style="color: var(--accent-primary); font-size: 0.8rem; text-decoration: none;">results</a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 3rem 0; border: 1px dashed var(--border-color); border-radius: 4px;">
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.9rem;">no active ballots found.</p>
+        <a href="/create" class="button">create_ballot</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

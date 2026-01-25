@@ -1,0 +1,57 @@
+<section id="vote-section">
+    {% set status, label = get_ballot_status(ballot) %}
+    {% set is_active = (status == 'active') %}
+    
+    <h2>vote_on: {{ ballot.measure }}</h2>
+    
+    <form hx-post="/vote/{{ ballot.ballot_id }}" hx-target="#vote-section" hx-swap="outerHTML">
+        <input type="hidden" name="X-CSRF-Token" value="{{ csrf_token }}">
+        
+        {% if error %}
+        <div class="alert-error">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="radio-group {% if field_errors and field_errors.option %}invalid-group{% endif %}">
+            {% for option in ballot.options %}
+            <label class="radio-label">
+                <input type="radio" name="option" value="{{ option }}" required>
+                <span style="font-size: 0.9rem;">{{ option }}</span>
+            </label>
+            {% endfor %}
+
+            {% if ballot.allow_write_in %}
+            <label class="radio-label">
+                <input type="radio" name="option" value="__write_in__" id="write-in-radio">
+                <span style="display: flex; gap: 0.5rem; width: 100%; font-size: 0.9rem; align-items: baseline;">
+                    write_in:
+                    <input type="text" name="write_in_value" placeholder="..." 
+                           class="{% if field_errors and field_errors.write_in_value %}invalid{% endif %}"
+                           style="background: none; border: none; border-bottom: 1px solid var(--border-color); color: inherit; padding: 0; border-radius: 0; font-family: inherit; width: 100%; font-size: 0.9rem;"
+                           onfocus="document.getElementById('write-in-radio').checked = true">
+                </span>
+            </label>
+            {% endif %}
+        </div>
+        {% if field_errors and field_errors.option %}
+            <div class="field-error-msg" style="margin-top: -1.5rem; margin-bottom: 1.5rem;">{{ field_errors.option }}</div>
+        {% endif %}
+        {% if field_errors and field_errors.write_in_value %}
+            <div class="field-error-msg" style="margin-top: -1.5rem; margin-bottom: 1.5rem;">{{ field_errors.write_in_value }}</div>
+        {% endif %}
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3rem;">
+            <button type="submit" {% if not is_active %}disabled{% endif %}>cast_vote</button>
+            
+            <div class="status-indicator status-{{ status }}">
+                <span class="status-dot"></span>
+                {{ label | lower }}
+            </div>
+        </div>
+    </form>
+
+    <div style="margin-top: 2rem;">
+        <a href="/results/{{ ballot.ballot_id }}" style="color: var(--text-secondary); font-size: 0.75rem; text-decoration: none; border-bottom: 1px dashed var(--text-secondary);">view_live_results</a>
+    </div>
+</section>

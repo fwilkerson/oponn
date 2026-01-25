@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}oponn{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const initValidation = (container) => {
+                if (!container || !container.querySelectorAll) return;
+                
+                container.querySelectorAll('input, select').forEach(input => {
+                    input.addEventListener('invalid', (e) => {
+                        e.preventDefault();
+                        input.classList.add('invalid');
+                        const parent = input.parentElement;
+                        if (!parent) return;
+                        
+                        let errorDiv = parent.querySelector('.field-error-msg');
+                        if (!errorDiv) {
+                            errorDiv = document.createElement('div');
+                            errorDiv.className = 'field-error-msg';
+                            parent.appendChild(errorDiv);
+                        }
+                        errorDiv.textContent = input.validationMessage;
+                    });
+
+                    input.addEventListener('input', () => {
+                        if (input.validity.valid) {
+                            input.classList.remove('invalid');
+                            const parent = input.parentElement;
+                            if (parent) {
+                                const errorDiv = parent.querySelector('.field-error-msg');
+                                if (errorDiv) errorDiv.textContent = '';
+                            }
+                        }
+                    });
+                });
+            };
+
+            // Use htmx.onLoad if available, otherwise just init body
+            if (typeof htmx !== 'undefined') {
+                htmx.onLoad((content) => {
+                    initValidation(content);
+                });
+            } else {
+                initValidation(document.body);
+            }
+        });
+    </script>
+</head>
+<body hx-boost="true" hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+    <div class="container">
+        <header>
+            <h1><a href="/">oponn</a></h1>
+            <nav>
+                <a href="/" class="{% if active_page == 'index' %}active{% endif %}">dashboard</a>
+                <a href="/create" class="{% if active_page == 'create' %}active{% endif %}">create</a>
+            </nav>
+        </header>
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <footer>
+    </footer>
+</body>
+</html>

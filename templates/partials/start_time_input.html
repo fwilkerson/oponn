@@ -1,0 +1,24 @@
+<div class="form-group">
+    <label for="scheduled_start_time_picker"
+        >commencement_timestamp (MM/DD/YYYY HH:MM)
+    </label>
+    <input
+        type="hidden"
+        id="scheduled_start_time"
+        name="scheduled_start_time"
+        value="{{ scheduled_start_time or '' }}"
+    />
+    <input
+        type="text"
+        id="scheduled_start_time_picker"
+        class="{% if field_errors and field_errors.scheduled_start_time %}invalid{% endif %}"
+        placeholder="01/24/2026 15:00"
+        pattern="\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{2}"
+        title="Please enter a date in MM/DD/YYYY HH:MM format"
+        oninput="const d = new Date(this.value.replace(/-/g, '/')); document.getElementById('scheduled_start_time').value = (this.value && !isNaN(d.getTime())) ? d.toISOString() : '';"
+    />
+    {% if field_errors and field_errors.scheduled_start_time %}
+        <div class="field-error-msg">{{ field_errors.scheduled_start_time }}</div>
+    {% endif %}
+    <div class="muted-small">local time will be used for commencement</div>
+</div>

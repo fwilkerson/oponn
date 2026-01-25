@@ -1,0 +1,69 @@
+<section id="create-ballot-section">
+    <h2>new_ballot</h2>
+    
+    <form hx-post="/create" hx-target="#create-ballot-section" hx-swap="outerHTML">
+        <input type="hidden" name="X-CSRF-Token" value="{{ csrf_token }}">
+        
+        {% if error %}
+        <div class="alert-error">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <div class="form-group">
+            <label for="measure">ballot_measure</label>
+            <input type="text" id="measure" name="measure" value="{{ measure or '' }}" 
+                   class="{% if field_errors and field_errors.measure %}invalid{% endif %}"
+                   placeholder="e.g. protocol_upgrade_v2" autofocus>
+            {% if field_errors and field_errors.measure %}
+                <div class="field-error-msg">{{ field_errors.measure }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-group">
+            <label for="options">voting_options (comma_separated)</label>
+            <input type="text" id="options" name="options_raw" value="{{ options_raw or '' }}" 
+                   class="{% if field_errors and field_errors.options_raw %}invalid{% endif %}"
+                   placeholder="aye, nay, abstain">
+            {% if field_errors and field_errors.options_raw %}
+                <div class="field-error-msg">{{ field_errors.options_raw }}</div>
+            {% endif %}
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label for="duration_mins">voting_window</label>
+                <select name="duration_mins" id="duration_mins">
+                    <option value="10" {% if duration_mins == 10 %}selected{% endif %}>10 minutes</option>
+                    <option value="60" {% if duration_mins == 60 %}selected{% endif %}>1 hour</option>
+                    <option value="1440" {% if duration_mins == 1440 %}selected{% endif %}>1 day</option>
+                    <option value="0" {% if duration_mins == 0 %}selected{% endif %}>indefinite</option>
+                </select>
+            </div>
+            <div>
+                <label for="start_time_type">commencement</label>
+                <select name="start_time_type" id="start_time_type" 
+                        hx-get="/partials/start-time-input" 
+                        hx-target="#scheduled-start-container">
+                    <option value="now" {% if start_time_type == 'now' %}selected{% endif %}>immediate</option>
+                    <option value="scheduled" {% if start_time_type == 'scheduled' %}selected{% endif %}>scheduled</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="scheduled-start-container">
+            {% if start_time_type == 'scheduled' %}
+                {% include "partials/start_time_input.html" %}
+            {% endif %}
+        </div>
+
+        <div class="form-group checkbox-group">
+            <input type="checkbox" id="allow_write_in" name="allow_write_in" class="checkbox-custom" {% if allow_write_in %}checked{% endif %}>
+            <label for="allow_write_in" style="margin-bottom: 0; cursor: pointer;">enable_write_ins</label>
+        </div>
+
+        <div style="margin-top: 3rem;">
+            <button type="submit">initialize_ballot</button>
+        </div>
+    </form>
+</section>
