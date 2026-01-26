@@ -1,16 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from typing import cast
 
+from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
 
 
-class ValidationErrorDetail(BaseModel):
-    # ... (keep existing ValidationErrorDetail)
-    """Data model for a single validation error."""
-
-    field: str
-    error: str
-    suggestion: str | None = None
+def sanitize_html(text: str) -> str:
+    """Removes HTML tags from the given text."""
+    return BeautifulSoup(text, "html.parser").get_text()
 
 
 def format_pydantic_errors(
@@ -216,9 +213,7 @@ class VoteForm(BaseModel):
                 raise ValueError("Write-in value required")
 
             # Basic sanitization
-            from bs4 import BeautifulSoup
-
-            vote_option = BeautifulSoup(vote_option, "html.parser").get_text()
+            vote_option = sanitize_html(vote_option)
 
         return Vote(option=cast(str, vote_option), is_write_in=is_write_in)
 

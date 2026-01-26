@@ -25,7 +25,7 @@ _in_memory_service = BallotService(_in_memory_repo)
 _ballot_service = _in_memory_service  # Exported for tests
 
 
-async def get_db_session() -> AsyncGenerator[AsyncSession | None, None]:
+async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
     """Dependency for getting a DB session."""
     if SessionLocal is None:
         yield None
@@ -35,7 +35,7 @@ async def get_db_session() -> AsyncGenerator[AsyncSession | None, None]:
 
 
 def get_ballot_service(
-    session: Annotated[AsyncSession | None, Depends(get_db_session)] = None,
+    session: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> BallotService:
     """
     Dependency that returns a BallotService.

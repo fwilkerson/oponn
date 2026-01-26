@@ -1,5 +1,4 @@
-from collections.abc import AsyncGenerator
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 import os
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -12,10 +11,3 @@ SessionLocal = (
     if engine
     else None
 )
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    if SessionLocal is None:
-        raise RuntimeError("DATABASE_URL is not set")
-    async with SessionLocal() as session:
-        yield session

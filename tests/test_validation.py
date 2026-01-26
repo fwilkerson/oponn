@@ -105,7 +105,7 @@ def test_scheduled_start_time_persistence(client):
     response = client.post(
         "/create",
         data={
-            "measure": "a", # Invalid
+            "measure": "a",  # Invalid
             "options_raw": "A, B",
             "start_time_type": "scheduled",
             "scheduled_start_time": test_time,
@@ -113,9 +113,10 @@ def test_scheduled_start_time_persistence(client):
         headers={"HX-Request": "true"},
     )
     assert response.status_code == 200
-    
+
     # 2. Verify hidden field still has the value
     from bs4 import BeautifulSoup
+
     soup = BeautifulSoup(response.text, "html.parser")
     hidden_input = soup.find("input", {"name": "scheduled_start_time"})
     assert hidden_input is not None
