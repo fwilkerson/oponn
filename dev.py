@@ -18,17 +18,27 @@ def run_cmd(command: list[str], env: dict[str, str] | None = None):
 
 @app.command()
 def start():
-    """Run the FastAPI application with reload."""
-    run_cmd(["uvicorn", "src.main:app", "--reload"])
+    """Run the FastAPI application with reload (alias for dev)."""
+    dev()
+
+
+@app.command()
+def dev():
+    """Run the app in development mode (permissive defaults, reload)."""
+    env = os.environ.copy()
+    env["OPONN_ENV"] = "development"
+    run_cmd([sys.executable, "-m", "uvicorn", "src.main:app", "--reload"], env=env)
 
 
 @app.command()
 def prod(
     workers: int = typer.Option(2, help="Number of Gunicorn workers"),
 ):
-    """Run the app with Gunicorn to simulate production (multi-worker)."""
+    """Run the app with Gunicorn in production mode (strict dependencies)."""
     # Default to local docker-compose PG if not set
     env = os.environ.copy()
+    env["OPONN_ENV"] = "production"
+
     if "DATABASE_URL" not in env:
         env["DATABASE_URL"] = (
             "postgresql+asyncpg://oponn_user:oponn_password@localhost:5432/oponn_db"

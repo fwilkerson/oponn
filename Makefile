@@ -4,10 +4,10 @@
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-start: ## Run the development server
-	poetry run ./dev.py start
+dev: ## Run in development mode (permissive, hot-reload)
+	poetry run ./dev.py dev
 
-prod: ## Run in production mode (Gunicorn + multi-worker)
+prod: ## Run in production mode (Gunicorn, strict dependencies)
 	poetry run ./dev.py prod
 
 services-up: ## Start Postgres and Redis

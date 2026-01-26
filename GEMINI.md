@@ -1,51 +1,49 @@
-# Oponn Agent Guide
+# Oponn Agent Guide (Revised)
 
-This document provides critical context for Gemini agents to maintain and evolve Oponn effectively.
+This document provides critical architectural context for Gemini agents to maintain and evolve Oponn in a distributed environment.
 
-## 1. Architectural Philosophy: Server-Informed UI (SIUI)
+## 1. Architectural Philosophy: Distributed SIUI
+Oponn follows a **Distributed Server-Informed UI** pattern. The server is the source of truth for data and navigation, and Redis ensures consistency across multiple worker processes.
 
-Oponn follows a **Server-Informed UI** pattern. The server is the source of truth for both data and navigation state.
-
-- **FastAPI + HTMX**: Avoid heavy client-side state. Use HTMX for partial DOM swaps (`HX-Target`) and server-side redirects (`HX-Redirect`).
-- **Async-First**: The entire stack—from `BallotRepository` to `BallotService`—is fully `async`.
-- **SSE for Live Updates**: Live results are pushed via Server-Sent Events. The client (`static/js/app.js`) handles reconnection and DOM updates based on SSE triggers.
+- **FastAPI + HTMX**: Server-side rendering with partial DOM swaps.
+- **Shared State**: All persistent data resides in **Postgres**. All real-time signals reside in **Redis**.
+- **Multi-Worker Ready**: Designed to run under Gunicorn with multiple workers. Local memory is strictly for transient caches or cleanup tracking.
 
 ## 2. Core Technical Constraints
 
 ### Concurrency & Consistency
-- **Per-Ballot Locking**: `BallotService` uses an `asyncio.Lock` per `ballot_id` during the `record_vote` process. This ensures that SSE broadcast order matches the persistence order and prevents race conditions in the in-memory tallies.
-- **Singleton Service**: The app uses a global singleton for `BallotService` to ensure background SSE threads and request threads share the same state.
+- **Distributed Locking**: `BallotService` uses **Redis-backed distributed locks** (`self.redis.lock`) during the `record_vote` process. This ensures that the "Check-then-Act" sequence (validation -> persistence -> broadcast) is linear across the entire cluster.
+- **Graceful Fallback**: In `development` or `testing` modes, the service falls back to a local `asyncio.Lock` if Redis is missing.
 
-### Type Safety
-- **basedpyright**: We use strict type checking. Ensure all new code passes `make typecheck`. Avoid `Any` where possible.
-- **Pydantic Models**: Use models in `src/models/` for data validation and API schemas.
+### SSE & Pub/Sub
+- **Redis Pub/Sub**: Live updates are broadcast to Redis channels (`ballot:{id}:updates`).
+- **Anyio Task Groups**: The SSE route (`src/routes/sse.py`) uses `anyio.create_task_group` to run a background listener that bridges Redis broadcasts to the client's local SSE stream.
 
-## 3. Testing Strategy: Functional Simulation
+### Lifecycle & Memory Management
+- **Background Reaper**: A lifespan task in `src/main.py` wakes up every 60 seconds to prune stale in-memory metadata (locks, inactive queue lists) from `BallotService`.
+- **Session Management**: Background tasks must create their own database sessions using `SessionLocal` via an `async with` block, as they lack request-scope dependency injection.
 
-**Do NOT use Playwright or Docker/Testcontainers.** To remain environment-agnostic and fast, we use a "Functional Simulation" approach.
+## 3. Production Hardening
+Oponn follows a **"Fail-Fast"** philosophy for production safety.
 
-- **Httpx + BeautifulSoup**: Tests in `tests/test_e2e.py` simulate HTMX requests by setting headers like `HX-Request: true` and parsing the resulting HTML fragments.
-- **SSE Verification**: SSE streams are tested by monitoring the `httpx` stream and accumulating multi-line `data:` blocks until an empty line is reached. This correctly handles the `sse-starlette` framing.
-- **Test Isolation**: A global `reset_service` fixture in `conftest.py` clears the singleton repository before every test.
+- **Strict Dependencies**: If `OPONN_ENV=production`, the app will raise a `RuntimeError` on startup if `DATABASE_URL` or `REDIS_URL` are missing.
+- **CSRF Security**:
+    - `GET` requests are exempt (read-only).
+    - `POST` requests require a token.
+    - In production, `secure=True` is enforced for cookies, and the `OPONN_SKIP_CSRF` backdoor is disabled.
 
-## 4. Development Tooling
+## 4. Development Tooling (`dev.py` & `Makefile`)
+- `make dev`: Standard development with hot-reload and permissive defaults.
+- `make services-up`: Launches Postgres 16 and Redis 7 via Docker Compose.
+- `make upgrade`: Applies Alembic migrations to the active database.
+- `make prod`: Runs the app via **Gunicorn** with multiple workers to simulate a production environment.
+- `make format-ui`: Formats templates (djlint), CSS (cssbeautify), and JS (jsbeautifier).
 
-The primary entry point is `dev.py`, built with **Typer**. The `Makefile` acts as a thin wrapper for compatibility.
+## 5. Testing Strategy
+- **Functional Simulation**: Tests in `tests/test_e2e.py` simulate HTMX requests and verify SSE streams.
+- **Isolation**: The `reset_service` fixture ensures a clean state between tests.
+- **Environment Agnostic**: Tests default to `InMemoryBallotRepository` for speed but should be verified against `SqlBallotRepository` periodically.
 
-- `make start` / `./dev.py start`: Runs the uvicorn dev server.
-- `make test` / `./dev.py test`: Runs the test suite.
-- `./dev.py test -k <pattern>`: Runs specific tests (a key feature for agents).
-- `make lint` / `make format`: Ruff-based quality gates.
-- `make typecheck`: Strict basedpyright check.
-
-## 5. UI & Styling Conventions
-
-- **Theme**: "Deep Charcoal" and "Gemini Purple" terminal aesthetic.
-- **CSS**: Variables are defined in `static/css/style.css`. Always use these variables instead of hardcoded hex codes to maintain the theme.
-- **Partials**: HTML fragments intended for HTMX swaps reside in `templates/partials/`.
-
-## 6. Critical Operational Notes for Agents
-
-- **CSRF**: CSRF is bypassed in test environments via the `OPONN_SKIP_CSRF` environment variable. Ensure this is respected in `conftest.py`.
-- **YAGNI**: Do not add dependencies (like Redis or Postgres) unless explicitly requested. The current `InMemoryBallotRepository` is intentional for the prototype stage.
-- **SSE Cleanup**: When implementing new SSE features, always ensure that client disconnects (detected via `anyio.get_cancelled_stack_group`) trigger proper queue unregistration in the service.
+## 6. Critical Operational Notes
+- **YAGNI**: Do not add new infrastructure unless it solves a distributed scaling problem.
+- **Serialization**: When broadcasting via Redis, always use `model_dump()` on Pydantic models to ensure JSON compatibility.

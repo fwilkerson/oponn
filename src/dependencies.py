@@ -18,12 +18,18 @@ templates = Jinja2Templates(directory="templates")
 templates.env.globals.update(get_ballot_status=BallotService.get_status)  # pyright: ignore[reportUnknownMemberType]
 
 CSRF_COOKIE_NAME = "oponn_csrf_token"
+OPONN_ENV = os.getenv("OPONN_ENV", "development").lower()
+
+# Dependency Validation
+if OPONN_ENV == "production":
+    if not os.getenv("DATABASE_URL"):
+        raise RuntimeError("DATABASE_URL must be set in production mode")
+    if not os.getenv("REDIS_URL"):
+        raise RuntimeError("REDIS_URL must be set in production mode")
 
 # In-memory repo singleton for when DATABASE_URL is not set
 _in_memory_repo = InMemoryBallotRepository()
-_ballot_service = BallotService(
-    _in_memory_repo, redis_url=os.getenv("REDIS_URL")
-)  # Exported for tests
+_ballot_service = BallotService(_in_memory_repo, redis_url=os.getenv("REDIS_URL"))
 
 
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
@@ -64,7 +70,11 @@ async def validate_csrf(
     x_csrf_token_form: Annotated[str | None, Form(alias="X-CSRF-Token")] = None,
     x_csrf_token_header: Annotated[str | None, Header(alias="X-CSRF-Token")] = None,
 ):
-    if os.getenv("OPONN_SKIP_CSRF") == "true":
+    # GET requests are exempt from CSRF as they are read-only
+    if request.method == "GET":
+        return
+
+    if OPONN_ENV != "production" and os.getenv("OPONN_SKIP_CSRF") == "true":
         return
 
     csrf_token = x_csrf_token_form or x_csrf_token_header

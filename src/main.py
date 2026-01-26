@@ -62,27 +62,11 @@ async def background_reaper():
 
 app = FastAPI(title="Oponn Voting Service", lifespan=lifespan)
 
-# CSRF Skip Configuration
-CSRF_SKIP_PATHS = [
-    "/static",
-    "/ballots/",  # Handled by dynamic check for live-results
-]
-
 
 @app.middleware("http")
 async def csrf_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    path = request.url.path
-
-    # Skip logic
-    should_skip = any(path.startswith(p) for p in CSRF_SKIP_PATHS if p != "/ballots/")
-    if not should_skip and path.startswith("/ballots/") and "live-results" in path:
-        should_skip = True
-
-    if should_skip:
-        return await call_next(request)
-
     # Get existing token or generate a new one
     token = request.cookies.get(CSRF_COOKIE_NAME)
     if not token:
@@ -95,12 +79,14 @@ async def csrf_middleware(
 
     # Ensure the CSRF cookie is set if not already present
     if CSRF_COOKIE_NAME not in request.cookies:
+        from .dependencies import OPONN_ENV
+
         response.set_cookie(
             CSRF_COOKIE_NAME,
             token,
             httponly=True,
             samesite="lax",
-            secure=False,  # Set to True in production with HTTPS
+            secure=OPONN_ENV == "production",
         )
 
     return response
