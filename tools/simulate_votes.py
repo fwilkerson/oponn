@@ -1,8 +1,9 @@
-import httpx
 import random
 import sys
 import time
 from typing import Any
+
+import httpx
 from bs4 import BeautifulSoup  # type: ignore
 
 
@@ -13,7 +14,7 @@ def simulate(ballot_id: int, num_votes: int = 10) -> None:
         # Get ballot options by parsing the vote page
         try:
             response = client.get(f"/vote/{ballot_id}")
-            response.raise_for_status()
+            _ = response.raise_for_status()
 
             soup = BeautifulSoup(response.text, "html.parser")
             h2 = soup.find("h2")

@@ -1,7 +1,10 @@
 import os
 import subprocess
 import sys
-from testcontainers.postgres import PostgresContainer  # type: ignore
+
+from testcontainers.postgres import (  # pyright: ignore[reportMissingTypeStubs]
+    PostgresContainer,
+)
 
 
 def generate_migration():

@@ -96,3 +96,27 @@ def test_csrf_protection(client):
             os.environ["OPONN_SKIP_CSRF"] = old_val
         else:
             os.environ.pop("OPONN_SKIP_CSRF", None)
+
+
+def test_scheduled_start_time_persistence(client):
+    """Regression test: Ensure scheduled_start_time persists on validation error."""
+    # 1. Submit with valid scheduled time but invalid measure (too short)
+    test_time = "2026-01-25T15:00:00Z"
+    response = client.post(
+        "/create",
+        data={
+            "measure": "a", # Invalid
+            "options_raw": "A, B",
+            "start_time_type": "scheduled",
+            "scheduled_start_time": test_time,
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 200
+    
+    # 2. Verify hidden field still has the value
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(response.text, "html.parser")
+    hidden_input = soup.find("input", {"name": "scheduled_start_time"})
+    assert hidden_input is not None
+    assert hidden_input["value"] == test_time

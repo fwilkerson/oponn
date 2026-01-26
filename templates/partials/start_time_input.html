@@ -1,4 +1,4 @@
-<div class="form-group">
+<div class="form-group" id="scheduled-start-wrapper">
     <label for="scheduled_start_time_picker"
         >commencement_timestamp (MM/DD/YYYY HH:MM)
     </label>
@@ -17,6 +17,19 @@
         title="Please enter a date in MM/DD/YYYY HH:MM format"
         oninput="const d = new Date(this.value.replace(/-/g, '/')); document.getElementById('scheduled_start_time').value = (this.value && !isNaN(d.getTime())) ? d.toISOString() : '';"
     />
+    <script>
+        (() => {
+            const hidden = document.getElementById('scheduled_start_time');
+            const picker = document.getElementById('scheduled_start_time_picker');
+            if (hidden && hidden.value && picker) {
+                const d = new Date(hidden.value);
+                if (!isNaN(d.getTime())) {
+                    const pad = (n) => n.toString().padStart(2, '0');
+                    picker.value = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                }
+            }
+        })();
+    </script>
     {% if field_errors and field_errors.scheduled_start_time %}
         <div class="field-error-msg">{{ field_errors.scheduled_start_time }}</div>
     {% endif %}

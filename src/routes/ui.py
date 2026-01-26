@@ -1,12 +1,15 @@
-from datetime import datetime, timedelta, timezone
-from typing import Annotated, cast
-from pydantic import ValidationError
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 
-from ..dependencies import get_ballot_service, templates, validate_csrf, get_csrf_token
-from ..models.ballot_models import BallotCreate, Vote
+from ..dependencies import get_ballot_service, get_csrf_token, templates, validate_csrf
+from ..models.ballot_models import (
+    BallotCreateForm,
+    VoteForm,
+    format_pydantic_errors,
+)
 from ..services.ballot_service import BallotService
 
 router = APIRouter()
@@ -58,8 +61,6 @@ async def process_create(
     scheduled_start_time: Annotated[str | None, Form()] = None,
     duration_mins: Annotated[int, Form()] = 0,
 ):
-    options = [o.strip() for o in options_raw.split(",") if o.strip()]
-
     # Internal helper to re-render form with error
     def render_error(
         error_msg: str | None = None, field_errors: dict[str, str] | None = None
@@ -75,6 +76,7 @@ async def process_create(
             "options_raw": options_raw,
             "allow_write_in": allow_write_in,
             "start_time_type": start_time_type,
+            "scheduled_start_time": scheduled_start_time,
             "duration_mins": duration_mins,
         }
 
@@ -89,67 +91,25 @@ async def process_create(
             context=context,
         )
 
-    if start_time_type == "scheduled":
-        if not scheduled_start_time:
-            return render_error(
-                field_errors={
-                    "scheduled_start_time": "Scheduled start time is required"
-                }
-            )
-        try:
-            st = datetime.fromisoformat(scheduled_start_time.replace("Z", "+00:00"))
-        except ValueError:
-            return render_error(
-                field_errors={
-                    "scheduled_start_time": "Invalid scheduled start time format"
-                }
-            )
-
-        if st < datetime.now(timezone.utc):
-            return render_error(
-                field_errors={
-                    "scheduled_start_time": "Scheduled start time must be in the future"
-                }
-            )
-    else:
-        st = datetime.now(timezone.utc)
-
-    et = st + timedelta(minutes=duration_mins) if duration_mins > 0 else None
-
     try:
-        ballot_create = BallotCreate(
+        # 1. Load the raw form data into our Form Model
+        form_data = BallotCreateForm(
             measure=measure,
-            options=options,
+            options_raw=options_raw,
             allow_write_in=allow_write_in,
-            start_time=st,
-            end_time=et,
+            start_time_type=start_time_type,
+            scheduled_start_time=scheduled_start_time,
+            duration_mins=duration_mins,
         )
+        # 2. Convert to our core BallotCreate model (which does further domain validation)
+        ballot_create = form_data.to_ballot_create()
+
     except ValidationError as e:
-        field_errors: dict[str, str] = {}
-        global_errors: list[str] = []
-
-        for err in e.errors():
-            loc = err["loc"]
-            msg = err["msg"].replace("Value error, ", "")
-            if loc and loc[0] in (
-                "measure",
-                "options",
-                "scheduled_start_time",
-            ):  # specific fields
-                # map 'options' model field to 'options_raw' form field name if needed,
-                # but here validation might be on 'options' list after split.
-                # The form field is 'options_raw'.
-                field_name = str(loc[0])
-                if field_name == "options":
-                    field_name = "options_raw"
-                field_errors[field_name] = msg
-            else:
-                global_errors.append(msg)
-
-        return render_error(
-            error_msg="; ".join(global_errors) if global_errors else None,
-            field_errors=field_errors,
+        error_msg, field_errors = format_pydantic_errors(
+            e, field_mapping={"options": "options_raw"}
         )
+        return render_error(error_msg=error_msg, field_errors=field_errors)
+
     except Exception as e:
         err_str = str(e).split("\n")[0]
         return render_error(error_msg=err_str)
@@ -188,9 +148,6 @@ async def process_vote(
     option: Annotated[str, Form()] = "",
     write_in_value: Annotated[str | None, Form()] = None,
 ):
-    is_write_in = option == "__write_in__"
-    vote_option = write_in_value if is_write_in else option
-
     async def render_error(
         error_msg: str | None = None, field_errors: dict[str, str] | None = None
     ):
@@ -214,25 +171,23 @@ async def process_vote(
             context=context,
         )
 
-    if is_write_in:
-        if not vote_option:
-            return await render_error(
-                field_errors={"write_in_value": "Write-in value required"}
-            )
-        from bs4 import BeautifulSoup
-
-        vote_option = BeautifulSoup(vote_option, "html.parser").get_text()
-
     try:
-        vote = Vote(option=cast(str, vote_option), is_write_in=is_write_in)
+        # 1. Load the raw form data into our VoteForm model
+        form_data = VoteForm(option=option, write_in_value=write_in_value)
+        # 2. Convert and validate to our core Vote model
+        vote = form_data.to_vote()
+
     except ValidationError as e:
-        field_errors: dict[str, str] = {}
-        for err in e.errors():
-            loc = err["loc"]
-            msg = err["msg"].replace("Value error, ", "")
-            if loc:
-                field_errors[str(loc[0])] = msg
-        return await render_error(field_errors=field_errors)
+        error_msg, field_errors = format_pydantic_errors(
+            e, field_mapping={"option": "write_in_value"}
+        )
+        return await render_error(error_msg=error_msg, field_errors=field_errors)
+
+    except ValueError as e:
+        # Handle custom ValueErrors from to_vote (like 'Write-in value required')
+        if option == "__write_in__":
+            return await render_error(field_errors={"write_in_value": str(e)})
+        return await render_error(error_msg=str(e))
     except Exception as e:
         return await render_error(error_msg=str(e))
 

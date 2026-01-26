@@ -44,7 +44,8 @@
                 <label for="start_time_type">commencement</label>
                 <select name="start_time_type" id="start_time_type" 
                         hx-get="/partials/start-time-input" 
-                        hx-target="#scheduled-start-container">
+                        hx-target="#scheduled-start-container"
+                        hx-swap="innerHTML">
                     <option value="now" {% if start_time_type == 'now' %}selected{% endif %}>immediate</option>
                     <option value="scheduled" {% if start_time_type == 'scheduled' %}selected{% endif %}>scheduled</option>
                 </select>
