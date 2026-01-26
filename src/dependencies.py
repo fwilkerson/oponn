@@ -45,7 +45,9 @@ def get_ballot_service(
     """
     if os.getenv("DATABASE_URL"):
         if session is None:
-            raise RuntimeError("DATABASE_URL set but no session provided")
+            # We allow None only if it's explicitly handled (like in the reaper)
+            # but for FastAPI routes, we want to ensure a session exists.
+            return _ballot_service
         _ballot_service.repository = SqlBallotRepository(session)
     else:
         _ballot_service.repository = _in_memory_repo

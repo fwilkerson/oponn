@@ -1,10 +1,12 @@
+import asyncio
 import secrets
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from starlette.staticfiles import StaticFiles
 
-from .dependencies import CSRF_COOKIE_NAME
+from .dependencies import CSRF_COOKIE_NAME, get_ballot_service
 from .models.exceptions import (
     BallotNotFoundError,
     InvalidOptionError,
@@ -12,7 +14,53 @@ from .models.exceptions import (
 )
 from .routes import sse, ui
 
-app = FastAPI(title="Oponn Voting Service")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Handle startup and shutdown events.
+    Starts the background metadata reaper.
+    """
+    # Startup: Start background tasks
+    reaper_task = asyncio.create_task(background_reaper())
+    yield
+    # Shutdown: Stop background tasks
+    reaper_task.cancel()
+    try:
+        await reaper_task
+    except asyncio.CancelledError:
+        pass
+
+
+async def background_reaper():
+    """Periodically clean up stale ballot metadata."""
+    from .database import SessionLocal
+    from .repositories.sql_repository import SqlBallotRepository
+
+    while True:
+        try:
+            await asyncio.sleep(60)  # Reap every 60 seconds
+            service = get_ballot_service(session=None)
+
+            # If we are using SQL, we need to provide a session for this "reap cycle"
+            if SessionLocal is not None:
+                async with SessionLocal() as session:
+                    # Temporarily point the service to a repository using this session
+                    original_repo = service.repository
+                    service.repository = SqlBallotRepository(session)
+                    try:
+                        await service.cleanup_stale_metadata()
+                    finally:
+                        service.repository = original_repo
+            else:
+                # In-memory mode
+                await service.cleanup_stale_metadata()
+
+        except Exception as e:
+            print(f"Error in background reaper: {e}")
+
+
+app = FastAPI(title="Oponn Voting Service", lifespan=lifespan)
 
 # CSRF Skip Configuration
 CSRF_SKIP_PATHS = [

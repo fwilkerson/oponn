@@ -118,6 +118,42 @@ class BallotService:
             except ValueError:
                 pass
 
+        # Immediate cleanup if the list is now empty
+        if ballot_id in self._sse_queues and not self._sse_queues[ballot_id]:
+            del self._sse_queues[ballot_id]
+
+    async def cleanup_stale_metadata(self):
+        """
+        Identify and remove metadata (locks, queue lists) for expired ballots.
+        """
+        # We work on a copy of the keys to avoid "dict changed size during iteration"
+        lock_ids = set(self._locks.keys())
+        queue_ids = set(self._sse_queues.keys())
+        all_ids = lock_ids.union(queue_ids)
+
+        for ballot_id in all_ids:
+            try:
+                ballot = await self.get_ballot(ballot_id)
+                status, _ = self.get_status(ballot)
+
+                # If the ballot is ended, we can potentially clean it up
+                if status == "ended":
+                    # 1. Handle SSE Queues: only remove if empty
+                    if (
+                        ballot_id in self._sse_queues
+                        and not self._sse_queues[ballot_id]
+                    ):
+                        del self._sse_queues[ballot_id]
+
+                    # 2. Handle Locks
+                    if ballot_id in self._locks:
+                        del self._locks[ballot_id]
+
+            except BallotNotFoundError:
+                # Ballot was deleted from DB? Clean up everything.
+                self._sse_queues.pop(ballot_id, None)
+                self._locks.pop(ballot_id, None)
+
     async def listen_for_updates(
         self, ballot_id: int, queue: asyncio.Queue[list[Tally]]
     ):
