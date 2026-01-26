@@ -21,7 +21,9 @@ CSRF_COOKIE_NAME = "oponn_csrf_token"
 
 # In-memory repo singleton for when DATABASE_URL is not set
 _in_memory_repo = InMemoryBallotRepository()
-_ballot_service = BallotService(_in_memory_repo)  # Exported for tests
+_ballot_service = BallotService(
+    _in_memory_repo, redis_url=os.getenv("REDIS_URL")
+)  # Exported for tests
 
 
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:

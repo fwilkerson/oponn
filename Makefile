@@ -4,10 +4,25 @@
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-start: ## Run the FastAPI application
+start: ## Run the development server
 	poetry run ./dev.py start
 
-test: ## Run tests in-memory (fast)
+prod: ## Run in production mode (Gunicorn + multi-worker)
+	poetry run ./dev.py prod
+
+services-up: ## Start Postgres and Redis
+	poetry run ./dev.py services start
+
+services-down: ## Stop Postgres and Redis
+	poetry run ./dev.py services stop
+
+migrate: ## Generate new DB migration
+	poetry run ./dev.py migrate
+
+upgrade: ## Apply DB migrations
+	poetry run ./dev.py upgrade
+
+test: ## Run test
 	unset DATABASE_URL && poetry run ./dev.py test --ignore=tests/test_sql_repo.py
 
 test-sql: ## Run PostgreSQL integration tests

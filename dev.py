@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import subprocess
 import sys
 
@@ -7,10 +8,10 @@ import typer
 app = typer.Typer(help="Oponn Development Tool", add_completion=False)
 
 
-def run_cmd(command: list[str]):
+def run_cmd(command: list[str], env: dict[str, str] | None = None):
     print(f"Running: {' '.join(command)}")
     try:
-        _ = subprocess.run(command, check=True)
+        _ = subprocess.run(command, check=True, env=env)
     except subprocess.CalledProcessError as e:
         sys.exit(e.returncode)
 
@@ -19,6 +20,35 @@ def run_cmd(command: list[str]):
 def start():
     """Run the FastAPI application with reload."""
     run_cmd(["uvicorn", "src.main:app", "--reload"])
+
+
+@app.command()
+def prod(
+    workers: int = typer.Option(2, help="Number of Gunicorn workers"),
+):
+    """Run the app with Gunicorn to simulate production (multi-worker)."""
+    # Default to local docker-compose PG if not set
+    env = os.environ.copy()
+    if "DATABASE_URL" not in env:
+        env["DATABASE_URL"] = (
+            "postgresql+asyncpg://oponn_user:oponn_password@localhost:5432/oponn_db"
+        )
+    if "REDIS_URL" not in env:
+        env["REDIS_URL"] = "redis://localhost:6379"
+
+    run_cmd(
+        [
+            "gunicorn",
+            "-k",
+            "uvicorn.workers.UvicornWorker",
+            "-w",
+            str(workers),
+            "--bind",
+            "0.0.0.0:8000",
+            "src.main:app",
+        ],
+        env=env,
+    )
 
 
 @app.command(
@@ -126,9 +156,38 @@ def simulate(
 
 
 @app.command()
+def services(
+    action: str = typer.Argument(..., help="start or stop"),
+):
+    """Manage backend services (Postgres & Redis) via Docker Compose."""
+    if action == "start":
+        run_cmd(["docker-compose", "up", "-d"])
+        print("Services started on ports 5432 (PG) and 6379 (Redis)")
+    elif action == "stop":
+        run_cmd(["docker-compose", "down"])
+    else:
+        print(f"Unknown action: {action}")
+        sys.exit(1)
+
+
+@app.command()
 def migrate():
     """Generate initial database migration using a temporary Postgres container."""
     run_cmd([sys.executable, "tools/generate_migration.py"])
+
+
+@app.command()
+def upgrade():
+    """Apply database migrations."""
+    env = os.environ.copy()
+    if "DATABASE_URL" not in env:
+        env["DATABASE_URL"] = (
+            "postgresql+asyncpg://oponn_user:oponn_password@localhost:5432/oponn_db"
+        )
+    if "REDIS_URL" not in env:
+        env["REDIS_URL"] = "redis://localhost:6379"
+
+    run_cmd([sys.executable, "-m", "alembic", "upgrade", "head"], env=env)
 
 
 if __name__ == "__main__":

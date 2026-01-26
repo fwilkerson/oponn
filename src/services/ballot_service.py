@@ -1,32 +1,29 @@
-from datetime import datetime, timezone, timedelta
 import asyncio
+import json
+from datetime import datetime, timedelta, timezone
 
-from ..models.ballot_models import (
-    Ballot,
-    BallotCreate,
-    Vote,
-    Tally,
-)
+import redis.asyncio as redis
+
+from ..models.ballot_models import Ballot, BallotCreate, Tally, Vote
 from ..models.exceptions import (
     BallotNotFoundError,
-    VotingNotOpenError,
     InvalidOptionError,
+    VotingNotOpenError,
 )
 from ..repositories.ballot_repository import BallotRepository
 
 
 class BallotService:
-    """
-    Business logic service for managing ballots and voting.
-    """
-
-    repository: BallotRepository
-
-    def __init__(self, repository: BallotRepository):
-        self.repository = repository
-        # SSE and locking state (should be managed by a singleton instance)
+    def __init__(self, repository: BallotRepository, redis_url: str | None = None):
+        self.repository: BallotRepository = repository
+        # This dictionary is now only for cleanup tracking, not the primary data stream
         self._sse_queues: dict[int, list[asyncio.Queue[list[Tally]]]] = {}
         self._locks: dict[int, asyncio.Lock] = {}
+
+        # Initialize Redis client if a URL is provided
+        self.redis: redis.Redis | None = (
+            redis.from_url(redis_url, decode_responses=True) if redis_url else None
+        )
 
     def _get_lock(self, ballot_id: int) -> asyncio.Lock:
         """Get or create an asyncio.Lock for a specific ballot."""
@@ -53,33 +50,48 @@ class BallotService:
 
     async def record_vote(self, ballot_id: int, vote: Vote) -> None:
         """
-        Record a vote for a ballot and notify all connected SSE clients.
-        Uses a per-ballot lock to ensure consistency and ordered updates.
+        Record a vote for a ballot and notify all workers via Redis.
+        Uses a Redis-backed distributed lock to ensure consistency across multiple workers.
         """
-        async with self._get_lock(ballot_id):
-            ballot = await self.get_ballot(ballot_id)
-            now = datetime.now(timezone.utc)
+        lock_name = f"lock:ballot:{ballot_id}"
 
-            if ballot.start_time and now < ballot.start_time:
-                raise VotingNotOpenError("Voting has not started for this ballot")
-            if ballot.end_time and now > ballot.end_time:
-                raise VotingNotOpenError("Voting has ended for this ballot")
+        if self.redis:
+            # timeout=10 to prevent deadlocks if a worker crashes
+            async with self.redis.lock(lock_name, timeout=10):
+                await self._do_record_vote(ballot_id, vote)
+        else:
+            async with self._get_lock(ballot_id):
+                await self._do_record_vote(ballot_id, vote)
 
-            if vote.is_write_in:
-                if not ballot.allow_write_in:
-                    raise InvalidOptionError(
-                        "Write-in votes are not allowed for this ballot"
-                    )
-            else:
-                if vote.option not in ballot.options:
-                    raise InvalidOptionError("Invalid option for this ballot")
+    async def _do_record_vote(self, ballot_id: int, vote: Vote) -> None:
+        """Inner logic for recording a vote."""
+        ballot = await self.get_ballot(ballot_id)
+        now = datetime.now(timezone.utc)
 
-            await self.repository.add_vote(ballot_id, vote.option)
+        if ballot.start_time and now < ballot.start_time:
+            raise VotingNotOpenError("Voting has not started for this ballot")
+        if ballot.end_time and now > ballot.end_time:
+            raise VotingNotOpenError("Voting has ended for this ballot")
 
-            # Notify SSE clients
-            updated_counts = await self.get_vote_counts(ballot_id)
-            for queue in self._sse_queues.get(ballot_id, []):
-                await queue.put(updated_counts)
+        if vote.is_write_in:
+            if not ballot.allow_write_in:
+                raise InvalidOptionError(
+                    "Write-in votes are not allowed for this ballot"
+                )
+        else:
+            if vote.option not in ballot.options:
+                raise InvalidOptionError("Invalid option for this ballot")
+
+        await self.repository.add_vote(ballot_id, vote.option)
+
+        # BROADCAST: Notify all workers via Redis Pub/Sub
+        updated_counts = await self.get_vote_counts(ballot_id)
+        if self.redis:
+            data = json.dumps([t.model_dump() for t in updated_counts])
+            await self.redis.publish(f"ballot:{ballot_id}:updates", data)
+
+        for queue in self._sse_queues.get(ballot_id, []):
+            await queue.put(updated_counts)
 
     async def get_vote_counts(self, ballot_id: int) -> list[Tally]:
         """Retrieve current vote counts for a ballot."""
@@ -105,6 +117,31 @@ class BallotService:
                 self._sse_queues[ballot_id].remove(queue)
             except ValueError:
                 pass
+
+    async def listen_for_updates(
+        self, ballot_id: int, queue: asyncio.Queue[list[Tally]]
+    ):
+        """
+        Listen to Redis Pub/Sub for updates to a specific ballot and push them to the local queue.
+        This allows multiple application workers to share the same update stream.
+        """
+        if not self.redis:
+            return
+
+        pubsub = self.redis.pubsub()
+        channel = f"ballot:{ballot_id}:updates"
+        await pubsub.subscribe(channel)
+
+        try:
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    data = json.loads(str(message["data"]))
+                    # Parse back into Tally objects
+                    tallies = [Tally(**t) for t in data]
+                    await queue.put(tallies)
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
 
     @staticmethod
     def format_time_delta(diff: timedelta) -> str:
