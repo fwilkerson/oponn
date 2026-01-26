@@ -1,30 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}oponn{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/style.css">
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
-    <script src="/static/js/app.js"></script>
-</head>
-<body hx-boost="true" hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
-    <div class="container">
-        <header>
-            <h1><a href="/">oponn</a></h1>
-            <nav>
-                <a href="/" class="{% if active_page == 'index' %}active{% endif %}">dashboard</a>
-                <a href="/create" class="{% if active_page == 'create' %}active{% endif %}">create</a>
-            </nav>
-        </header>
-
-        <main>
-            {% block content %}{% endblock %}
-        </main>
-    </div>
-
-    <footer>
-    </footer>
-</body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>
+            {% block title %}oponn{% endblock %}
+        </title>
+        <link rel="stylesheet" href="/static/css/style.css" />
+        <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+        <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+        <script src="/static/js/app.js"></script>
+    </head>
+    <body hx-boost="true" hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+        <div class="container">
+            <header>
+                <h1>
+                    <a href="/">oponn</a>
+                </h1>
+                <nav>
+                    <a href="/" class="{% if active_page == 'index' %}active{% endif %}">dashboard</a>
+                    <a href="/create"
+                       class="{% if active_page == 'create' %}active{% endif %}">create</a>
+                </nav>
+            </header>
+            <main>
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+        <footer>
+        </footer>
+    </body>
 </html>

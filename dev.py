@@ -55,10 +55,58 @@ def lint():
 
 
 @app.command()
+def lint_ui():
+    """Lint HTML with djlint."""
+    run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "djlint",
+            "templates/",
+            "--check",
+            "--profile",
+            "jinja",
+        ]
+    )
+
+
+@app.command()
 def format():
     """Format code with Ruff."""
     run_cmd(
         [sys.executable, "-m", "ruff", "format", "src/", "tests/", "tools/", "dev.py"]
+    )
+
+
+@app.command()
+def format_ui():
+    """Format HTML/CSS/JS with djlint and beautifiers."""
+    # Format templates with djlint
+    run_cmd(
+        [
+            sys.executable,
+            "-m",
+            "djlint",
+            "templates/",
+            "--reformat",
+            "--profile",
+            "jinja",
+        ]
+    )
+    # Format static assets with beautifiers
+    run_cmd(
+        [
+            "css-beautify",
+            "-r",
+            "static/css/style.css",
+        ]
+    )
+    run_cmd(
+        [
+            "js-beautify",
+            "-r",
+            "static/js/app.js",
+        ]
     )
 
 

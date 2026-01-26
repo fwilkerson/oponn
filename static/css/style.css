@@ -4,8 +4,10 @@
     --border-color: #434c5e;
     --text-primary: #eceff4;
     --text-secondary: #d8dee9;
-    --accent-primary: #8fbcbb; /* Nord Frost Teal */
-    --accent-secondary: #81a1c1; /* Nord Frost Blue (Muted) */
+    --accent-primary: #8fbcbb;
+    /* Nord Frost Teal */
+    --accent-secondary: #81a1c1;
+    /* Nord Frost Blue (Muted) */
     --success: #a3be8c;
     --error: #bf616a;
     --pending: #ebcb8b;
@@ -70,7 +72,8 @@ nav a {
     transition: color 0.2s ease;
 }
 
-nav a:hover, nav a.active {
+nav a:hover,
+nav a.active {
     color: var(--accent-primary);
 }
 
@@ -101,12 +104,12 @@ h2::before {
 }
 
 .form-row {
-    display: flex; 
-    gap: 2rem; 
+    display: flex;
+    gap: 2rem;
     margin-bottom: 1.5rem;
 }
 
-.form-row > div {
+.form-row>div {
     flex: 1;
 }
 
@@ -132,11 +135,13 @@ select {
     transition: border-color 0.2s ease;
 }
 
-input:focus, select:focus {
+input:focus,
+select:focus {
     border-color: var(--accent-secondary);
 }
 
-button, .button {
+button,
+.button {
     background-color: transparent;
     color: var(--accent-primary);
     border: 1px solid var(--accent-primary);
@@ -150,12 +155,14 @@ button, .button {
     text-decoration: none;
 }
 
-button:hover, .button:hover {
+button:hover,
+.button:hover {
     background-color: var(--accent-primary);
     color: var(--bg-color);
 }
 
-button:disabled, .button.disabled {
+button:disabled,
+.button.disabled {
     opacity: 0.4;
     cursor: not-allowed;
     border-color: var(--border-color);
@@ -212,7 +219,11 @@ button:disabled:hover {
 
 .list-item:hover {
     border-color: var(--accent-primary);
-    background-color: rgba(143, 188, 187, 0.05); /* Very subtle teal highlight */
+    background-color: rgba(143,
+            188,
+            187,
+            0.05);
+    /* Very subtle teal highlight */
 }
 
 .ballot-info-primary {
@@ -325,12 +336,29 @@ input[type="radio"]:checked::after {
     border-radius: 50%;
 }
 
-.status-active { color: var(--success); }
-.status-active .status-dot { background-color: var(--success); }
-.status-pending { color: var(--pending); }
-.status-pending .status-dot { background-color: var(--pending); }
-.status-ended { color: var(--error); }
-.status-ended .status-dot { background-color: var(--error); }
+.status-active {
+    color: var(--success);
+}
+
+.status-active .status-dot {
+    background-color: var(--success);
+}
+
+.status-pending {
+    color: var(--pending);
+}
+
+.status-pending .status-dot {
+    background-color: var(--pending);
+}
+
+.status-ended {
+    color: var(--error);
+}
+
+.status-ended .status-dot {
+    background-color: var(--error);
+}
 
 /* Footer / Status Bar */
 footer {
@@ -349,9 +377,17 @@ footer {
 }
 
 @keyframes pulse {
-    0% { opacity: 0.4; }
-    50% { opacity: 1; }
-    100% { opacity: 0.4; }
+    0% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.4;
+    }
 }
 
 .pulse {
@@ -359,7 +395,8 @@ footer {
 }
 
 /* Form Validation */
-input.invalid, select.invalid {
+input.invalid,
+select.invalid {
     border-color: var(--error);
     background-color: rgba(191, 97, 106, 0.05);
 }

@@ -16,8 +16,14 @@ test-sql: ## Run PostgreSQL integration tests
 lint: ## Automatically fix linting issues with Ruff
 	poetry run ./dev.py lint
 
+lint-ui: ## Check HTML/CSS/JS with djlint
+	poetry run ./dev.py lint-ui
+
 format: ## Automatically format files with Ruff
 	poetry run ./dev.py format
+
+format-ui: ## Automatically format HTML/CSS/JS with djlint
+	poetry run ./dev.py format-ui
 
 typecheck: ## Check types with basedpyright
 	poetry run ./dev.py typecheck
