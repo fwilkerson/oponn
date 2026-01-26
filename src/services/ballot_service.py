@@ -21,12 +21,12 @@ class BallotService:
     """
 
     repository: BallotRepository
-    # Class-level state to ensure SSE and locking consistency across request-scoped instances
-    _sse_queues: dict[int, list[asyncio.Queue[list[Tally]]]] = {}
-    _locks: dict[int, asyncio.Lock] = {}
 
     def __init__(self, repository: BallotRepository):
         self.repository = repository
+        # SSE and locking state (should be managed by a singleton instance)
+        self._sse_queues: dict[int, list[asyncio.Queue[list[Tally]]]] = {}
+        self._locks: dict[int, asyncio.Lock] = {}
 
     def _get_lock(self, ballot_id: int) -> asyncio.Lock:
         """Get or create an asyncio.Lock for a specific ballot."""

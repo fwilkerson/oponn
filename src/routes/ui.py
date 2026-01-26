@@ -65,7 +65,7 @@ async def create_page(request: Request):
 async def start_time_input(request: Request, start_time_type: str):
     if start_time_type == "scheduled":
         return templates.TemplateResponse(
-            request=request, name="partials/start_time_input.html"
+            request=request, name="partials/start-time-input.html"
         )
     return HTMLResponse("")
 

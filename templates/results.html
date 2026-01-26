@@ -11,10 +11,10 @@
     </div>
     
     <div style="margin-top: 3rem; display: flex; justify-content: space-between; align-items: center;">
-        <a href="/vote/{{ ballot.ballot_id }}" class="button">back_to_voting</a>
-        <div class="status-indicator" style="color: var(--text-secondary); font-size: 0.7rem;">
+        <a href="/vote/{{ ballot.ballot_id }}" class="button">return_to_voting</a>
+        <div class="status-indicator">
             <span class="status-dot pulse" style="background-color: var(--accent-primary);"></span>
-            live_feed_active
+            <span style="color: var(--text-secondary); font-size: 0.7rem;">live_feed_active</span>
         </div>
     </div>
 </section>

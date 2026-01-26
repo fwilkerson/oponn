@@ -21,8 +21,7 @@ CSRF_COOKIE_NAME = "oponn_csrf_token"
 
 # In-memory repo singleton for when DATABASE_URL is not set
 _in_memory_repo = InMemoryBallotRepository()
-_in_memory_service = BallotService(_in_memory_repo)
-_ballot_service = _in_memory_service  # Exported for tests
+_ballot_service = BallotService(_in_memory_repo)  # Exported for tests
 
 
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
@@ -39,16 +38,17 @@ def get_ballot_service(
 ) -> BallotService:
     """
     Dependency that returns a BallotService.
-    If DATABASE_URL is set, it uses SqlBallotRepository.
+    If DATABASE_URL is set, it uses SqlBallotRepository with the current session.
     Otherwise, it uses the global InMemoryBallotRepository.
     """
     if os.getenv("DATABASE_URL"):
         if session is None:
-            # This might happen if called outside of FastAPI dependency injection
-            # but with DATABASE_URL set. We want to avoid this in tests.
             raise RuntimeError("DATABASE_URL set but no session provided")
-        return BallotService(SqlBallotRepository(session))
-    return _in_memory_service
+        _ballot_service.repository = SqlBallotRepository(session)
+    else:
+        _ballot_service.repository = _in_memory_repo
+
+    return _ballot_service
 
 
 async def get_csrf_token(request: Request) -> str:
