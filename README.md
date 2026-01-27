@@ -4,31 +4,33 @@ Oponn is a high-performance, real-time voting service built with **FastAPI**, **
 
 ## Architecture
 
-Oponn is designed for horizontal scalability across multiple worker processes. It uses **Redis Pub/Sub** to synchronize live results and **Postgres** for persistent storage.
+Oponn is designed for horizontal scalability. It uses a distributed synchronization layer to ensure live results reach all users instantly, regardless of which server instance they are connected to.
 
-```mermaid
-graph TD
-    Client1[Browser Client A] -- SSE Connection --> WorkerA[Gunicorn Worker 1]
-    Client2[Browser Client B] -- SSE Connection --> WorkerB[Gunicorn Worker 2]
-    
-    WorkerA -- Vote Cast --> Postgres[(Postgres DB)]
-    WorkerA -- Broadcast Update --> Redis[Redis Pub/Sub]
-    
-    Redis -- Signal --> WorkerB
-    WorkerB -- Push Event --> Client2
-    
-    subgraph Cluster
-        WorkerA
-        WorkerB
-    end
+```text
+    ┌───────────┐             ┌───────────┐
+    │ Browser A │             │ Browser B │
+    └─────┬─────┘             └─────┬─────┘
+          │ (SSE)                   │ (SSE)
+          ▼                         ▼
+  ┌────────────────┐       ┌────────────────┐
+  │ Gunicorn Wkr 1 │       │ Gunicorn Wkr 2 │
+  └───────┬────────┘       └────────▲───────┘
+          │                         │
+   1. Cast Vote              3. Signal Sync
+          │                         │
+          ▼                         │
+  ┌────────────────┐       ┌────────┴───────┐
+  │  Postgres DB   │──────▶│ Redis Pub/Sub  │
+  │ (Persistence)  │   2.  │   (Sync Hub)   │
+  └────────────────┘       └────────────────┘
 ```
 
 ### Key Components
 - **FastAPI**: Handles the ASGI web requests and SSE streaming.
-- **HTMX**: Powers dynamic DOM updates without complex client-side frameworks.
+- **HTMX**: Powers dynamic DOM updates without client-side frameworks.
 - **Redis**: Manages distributed locking and real-time event broadcasting.
 - **Postgres**: Ensures durable persistence of ballots and vote counts.
-- **Lifespan Reaper**: A background task that prunes stale in-memory metadata to prevent leaks.
+- **Lifespan Reaper**: A background task that prunes stale in-memory metadata.
 
 ## Getting Started
 
@@ -39,32 +41,18 @@ graph TD
 
 ### 1. Installation
 ```bash
-# Install dependencies
 poetry install
 ```
 
 ### 2. Infrastructure
 ```bash
-# Start Postgres 16 and Redis 7
-make services-up
-
-# Apply database migrations
-make upgrade
+make services-up   # Start Postgres 16 & Redis 7
+make upgrade       # Apply migrations
 ```
 
 ### 3. Running the Application
-
-#### Development Mode (Single Worker, Hot-Reload)
-Best for UI/Logic development.
-```bash
-make dev
-```
-
-#### Production Simulation (Multiple Workers)
-Best for testing distributed behavior and SSE synchronization.
-```bash
-make prod
-```
+- **`make dev`**: Single worker with hot-reload (Standard Dev).
+- **`make prod`**: Multi-worker Gunicorn (Production Simulation).
 
 ## Development Commands
 

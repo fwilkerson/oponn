@@ -16,7 +16,7 @@ from .routes import sse, ui
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     """
     Handle startup and shutdown events.
     Starts the background metadata reaper.
@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     reaper_task = asyncio.create_task(background_reaper())
     yield
     # Shutdown: Stop background tasks
-    reaper_task.cancel()
+    __ = reaper_task.cancel()
     try:
         await reaper_task
     except asyncio.CancelledError:

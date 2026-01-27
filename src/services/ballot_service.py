@@ -151,8 +151,8 @@ class BallotService:
 
             except BallotNotFoundError:
                 # Ballot was deleted from DB? Clean up everything.
-                self._sse_queues.pop(ballot_id, None)
-                self._locks.pop(ballot_id, None)
+                _ = self._sse_queues.pop(ballot_id, None)
+                _ = self._locks.pop(ballot_id, None)
 
     async def listen_for_updates(
         self, ballot_id: int, queue: asyncio.Queue[list[Tally]]
