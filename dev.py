@@ -158,11 +158,11 @@ def typecheck():
 
 @app.command()
 def simulate(
-    ballot_id: int = typer.Argument(..., help="ID of the ballot to simulate votes for"),  # pyright: ignore[reportCallInDefaultInitializer]
+    ballot_id: str = typer.Argument(..., help="ID of the ballot to simulate votes for"),  # pyright: ignore[reportCallInDefaultInitializer]
     num_votes: int = typer.Argument(10, help="Number of votes to cast"),  # pyright: ignore[reportCallInDefaultInitializer]
 ):
     """Simulate votes for a specific ballot."""
-    run_cmd([sys.executable, "tools/simulate_votes.py", str(ballot_id), str(num_votes)])
+    run_cmd([sys.executable, "tools/simulate_votes.py", ballot_id, str(num_votes)])
 
 
 @app.command()

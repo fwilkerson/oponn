@@ -7,7 +7,7 @@ import httpx
 from bs4 import BeautifulSoup  # type: ignore
 
 
-def simulate(ballot_id: int, num_votes: int = 10) -> None:
+def simulate(ballot_id: str, num_votes: int = 10) -> None:
     base_url = "http://localhost:8000"
 
     with httpx.Client(base_url=base_url, follow_redirects=True) as client:
@@ -64,6 +64,7 @@ def simulate(ballot_id: int, num_votes: int = 10) -> None:
             try:
                 # Use the UI endpoint (form submission)
                 _ = client.post(f"/vote/{ballot_id}", data=data, headers=headers)
+                client.cookies.set(f"voted_{ballot_id}", "")  # Clear voted cookie
                 print(f"Vote {i + 1}/{num_votes}: Cast for '{display_option}'")
             except Exception as e:
                 print(f"Error casting vote {i + 1}: {e}")
@@ -77,7 +78,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        bid = int(sys.argv[1])
+        bid = sys.argv[1]
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 10
         simulate(bid, n)
     except ValueError:
