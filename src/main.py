@@ -35,7 +35,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 async def background_reaper():
     """Periodically clean up stale ballot metadata."""
     from .database import SessionLocal
-    from .repositories.sql_repository import SqlBallotRepository
+    from .repositories.sql_ballot_repository import SqlBallotRepository
 
     while True:
         try:

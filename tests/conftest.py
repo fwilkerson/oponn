@@ -1,13 +1,50 @@
-import pytest
+import os
+import socket
 import threading
 import time
+
+import pytest
 import uvicorn
-import socket
-import os
 from fastapi.testclient import TestClient
+from src.dependencies import _ballot_service, validate_csrf
 from src.main import app
-from src.dependencies import validate_csrf, _ballot_service
 from src.repositories.ballot_repository import InMemoryBallotRepository
+
+
+def pytest_assertrepr_compare(op, left, right):
+    """Custom assertion representation for HTML string comparisons."""
+    if (
+        isinstance(left, str)
+        and isinstance(right, str)
+        and op == "in"
+        and "<html" in right.lower()
+    ):
+        try:
+            from bs4 import BeautifulSoup
+
+            # Prettify the HTML for easier reading
+            right_pretty = BeautifulSoup(right, "html.parser").prettify()
+        except ImportError:
+            right_pretty = right
+
+        # Write to a temp file for full inspection
+        import os
+
+        # Use the project's temp dir if we can identify it, otherwise system temp
+        temp_dir = os.path.join(os.getcwd(), ".pytest_failures")
+        os.makedirs(temp_dir, exist_ok=True)
+        dump_path = os.path.join(temp_dir, "failure_output.html")
+        with open(dump_path, "w") as f:
+            f.write(right)
+
+        lines = [
+            "HTML Comparison Failure:",
+            f"Expected string: '{left}'",
+            f"Full HTML content dumped to: {dump_path}",
+            "Prettified HTML context:",
+        ]
+        lines.extend(right_pretty.splitlines())
+        return lines
 
 
 def get_free_port():
@@ -30,7 +67,6 @@ def reset_service():
     if isinstance(_ballot_repo, InMemoryBallotRepository):
         _ballot_repo.ballots_db.clear()
         _ballot_repo.votes_db.clear()
-        _ballot_repo.ballot_id_counter = 0
 
 
 @pytest.fixture

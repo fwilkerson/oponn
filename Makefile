@@ -23,7 +23,7 @@ upgrade: ## Apply DB migrations
 	poetry run ./dev.py upgrade
 
 test: ## Run test
-	unset DATABASE_URL && poetry run ./dev.py test --ignore=tests/test_sql_repo.py
+	unset DATABASE_URL && poetry run ./dev.py test -vv --ignore=tests/test_sql_repo.py
 
 test-sql: ## Run PostgreSQL integration tests
 	poetry run ./dev.py test tests/test_sql_repo.py

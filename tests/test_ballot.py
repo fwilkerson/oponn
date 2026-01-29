@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
+
 import pytest
+from bs4 import BeautifulSoup
 from itsdangerous import URLSafeTimedSerializer
-from src.main import app
-from src.models.ballot_models import BallotCreate, Ballot
 from src.dependencies import get_ballot_service
+from src.main import app
+from src.models.ballot_models import Ballot, BallotCreate
 
 
 @pytest.mark.asyncio
@@ -51,7 +53,7 @@ async def test_dashboard_and_create_navigation(client):
     # Check create page
     response = client.get("/create")
     assert response.status_code == 200
-    assert "new_ballot" in response.text
+    assert "init_ballot" in response.text
 
 
 @pytest.mark.asyncio
@@ -140,7 +142,10 @@ async def test_vote_button_states(client):
     ballot = await service.create_ballot(bc)
 
     response = client.get(f"/vote/{ballot.ballot_id}")
-    assert 'button type="submit" disabled' in response.text
+    soup = BeautifulSoup(response.text, "html.parser")
+    button = soup.find("button", {"type": "submit"})
+    assert "button-action" in button["class"]
+    assert button.has_attr("disabled")
     assert "starts in" in response.text
 
     # Create an ended ballot
@@ -156,7 +161,10 @@ async def test_vote_button_states(client):
     ballot_ended = await service.create_ballot(bc_ended)
 
     response = client.get(f"/vote/{ballot_ended.ballot_id}")
-    assert 'button type="submit" disabled' in response.text
+    soup = BeautifulSoup(response.text, "html.parser")
+    button = soup.find("button", {"type": "submit"})
+    assert "button-action" in button["class"]
+    assert button.has_attr("disabled")
     assert "voting closed" in response.text
 
 

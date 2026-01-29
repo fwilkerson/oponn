@@ -8,11 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import SessionLocal
 from .repositories.ballot_repository import InMemoryBallotRepository
-from .repositories.sql_repository import SqlBallotRepository
-from .repositories.user_repository import InMemoryUserRepository
+from .repositories.sql_ballot_repository import SqlBallotRepository
 from .repositories.sql_user_repository import SqlUserRepository
-from .services.ballot_service import BallotService
+from .repositories.user_repository import InMemoryUserRepository
 from .services.auth_service import AuthService
+from .services.ballot_service import BallotService
 
 # Infrastructure singletons
 templates = Jinja2Templates(directory="templates")

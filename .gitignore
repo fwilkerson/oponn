@@ -9,6 +9,7 @@ env/
 /env/
 .poetry/
 .pytest_cache/
+.pytest_failures/
 .ruff_cache/
 
 # IDEs

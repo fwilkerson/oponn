@@ -1,10 +1,10 @@
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from testcontainers.postgres import PostgresContainer
-from src.repositories.models import Base
-from src.repositories.sql_repository import SqlBallotRepository
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from src.models.ballot_models import BallotCreate
+from src.repositories.models import Base
+from src.repositories.sql_ballot_repository import SqlBallotRepository
+from testcontainers.postgres import PostgresContainer
 
 
 @pytest.fixture(scope="session")
