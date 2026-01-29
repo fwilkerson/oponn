@@ -47,3 +47,25 @@ Oponn follows a **"Fail-Fast"** philosophy for production safety.
 ## 6. Critical Operational Notes
 - **YAGNI**: Do not add new infrastructure unless it solves a distributed scaling problem.
 - **Serialization**: When broadcasting via Redis, always use `model_dump()` on Pydantic models to ensure JSON compatibility.
+
+## 7. UI Design Patterns: Nordic Terminal
+Oponn uses a **Nordic Terminal** aesthetic, combining the Nord color palette with a minimalist Command Line Interface (CLI) feel.
+
+### Aesthetic Principles
+- **Typography**: Strict use of monospace fonts (`JetBrains Mono`, `Fira Code`).
+- **Shapes**: Sharp edges (2px max radius) and square status indicators.
+- **Atmosphere**: Subtle scanline overlays and path-style breadcrumbs (`~/oponn/`).
+
+### Color Semantics
+- **White (`--text-primary`)**: Root Shell context (`~/oponn/`) and primary data.
+- **Blue (`--accent-secondary`)**: **Context & Navigation**. Used for Page Titles, Nav Links, and "View" buttons (e.g., `results`, `return_to_voting`).
+- **Purple (`--accent-tertiary`)**: **Commands & Actions**. Used for buttons that change state (e.g., `init_ballot`, `cast_vote`) and the prompt character (`>`).
+- **Teal (`--accent-primary`)**: **Data & Selection**. Used for Progress Bars, Radio Inputs, List Highlights, and Status Indicators.
+- **Green (`--success`)**: Reserved strictly for success alerts/confirmations (NOT for data visualization).
+
+### Component Standards
+- **Progress Bars**: Must use a "segmented" or "blocky" fill pattern (`linear-gradient(90deg, ...)`) to mimic terminal output.
+- **Terminology**: Prefer technical, concise terms. Use **`init`** instead of `create` or `initialize`.
+- **Interactivity**: Every primary action button MUST include an HTMX indicator (`...`) to provide immediate processing feedback.
+- **Borders**: Prefer `border-left` accents for alerts and list items over full boxes when possible.
+

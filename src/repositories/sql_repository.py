@@ -27,6 +27,7 @@ class SqlBallotRepository(BallotRepository):
         return [
             Ballot(
                 ballot_id=b.id,
+                owner_id=b.owner_id,
                 measure=b.measure,
                 options=[opt.text for opt in b.options],
                 allow_write_in=b.allow_write_in,
@@ -37,7 +38,7 @@ class SqlBallotRepository(BallotRepository):
         ]
 
     @override
-    async def get_by_id(self, ballot_id: int) -> Ballot | None:
+    async def get_by_id(self, ballot_id: str) -> Ballot | None:
         stmt = (
             select(BallotTable)
             .where(BallotTable.id == ballot_id)
@@ -49,6 +50,7 @@ class SqlBallotRepository(BallotRepository):
             return None
         return Ballot(
             ballot_id=b.id,
+            owner_id=b.owner_id,
             measure=b.measure,
             options=[opt.text for opt in b.options],
             allow_write_in=b.allow_write_in,
@@ -57,8 +59,11 @@ class SqlBallotRepository(BallotRepository):
         )
 
     @override
-    async def create(self, ballot_create: BallotCreate) -> Ballot:
+    async def create(
+        self, ballot_create: BallotCreate, owner_id: str | None = None
+    ) -> Ballot:
         ballot = BallotTable(
+            owner_id=owner_id,
             measure=ballot_create.measure,
             allow_write_in=ballot_create.allow_write_in,
             start_time=ballot_create.start_time,
@@ -81,13 +86,13 @@ class SqlBallotRepository(BallotRepository):
         return res
 
     @override
-    async def add_vote(self, ballot_id: int, option: str) -> None:
+    async def add_vote(self, ballot_id: str, option: str) -> None:
         vote = VoteTable(ballot_id=ballot_id, option_text=option)
         self.session.add(vote)
         await self.session.commit()
 
     @override
-    async def get_tallies(self, ballot_id: int) -> list[Tally]:
+    async def get_tallies(self, ballot_id: str) -> list[Tally]:
         # 1. Get predefined options
         ballot_stmt = (
             select(BallotTable)

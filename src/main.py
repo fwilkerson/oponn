@@ -12,7 +12,7 @@ from .models.exceptions import (
     InvalidOptionError,
     VotingNotOpenError,
 )
-from .routes import sse, ui
+from .routes import auth, sse, ui
 
 
 @asynccontextmanager
@@ -113,3 +113,4 @@ async def domain_error_handler(_request: Request, exc: Exception):
 
 app.include_router(ui.router)
 app.include_router(sse.router)
+app.include_router(auth.router)

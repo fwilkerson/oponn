@@ -1,4 +1,4 @@
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,6 +11,7 @@ from ..models.ballot_models import (
     format_pydantic_errors,
 )
 from ..services.ballot_service import BallotService
+from .auth import get_current_user_id
 
 router = APIRouter()
 
@@ -32,6 +33,8 @@ def render_template(
     if "csrf_token" not in context:
         context["csrf_token"] = getattr(request.state, "csrf_token", "")
 
+    context["user_id"] = get_current_user_id(request)
+
     return templates.TemplateResponse(
         request=request,
         name=template_name,
@@ -44,7 +47,12 @@ async def dashboard(
     request: Request,
     service: Annotated[BallotService, Depends(get_ballot_service)],
 ):
-    ballots = await service.list_ballots()
+    user_id = get_current_user_id(request)
+    ballots = []
+    if user_id:
+        all_ballots = await service.list_ballots()
+        ballots = [b for b in all_ballots if b.owner_id == user_id]
+
     return render_template(
         request,
         "index.html",
@@ -83,7 +91,7 @@ async def process_create(
     duration_mins: Annotated[int, Form()] = 0,
 ):
     # Context shared between normal and error rendering
-    context: dict[str, Any] = {
+    context: dict[str, object] = {
         "active_page": "create",
         "measure": measure,
         "options_raw": options_raw,
@@ -122,7 +130,8 @@ async def process_create(
             request, "create.html", context, "partials/create_form.html"
         )
 
-    new_ballot = await service.create_ballot(ballot_create)
+    user_id = get_current_user_id(request)
+    new_ballot = await service.create_ballot(ballot_create, owner_id=user_id)
 
     if request.headers.get("HX-Request"):
         response = Response(status_code=204)
@@ -135,22 +144,33 @@ async def process_create(
 @router.get("/vote/{ballot_id}", response_class=HTMLResponse)
 async def vote_page(
     request: Request,
-    ballot_id: int,
+    ballot_id: str,
     service: Annotated[BallotService, Depends(get_ballot_service)],
 ):
     ballot = await service.get_ballot(ballot_id)
-    return render_template(request, "vote.html", {"ballot": ballot})
+    has_voted = request.cookies.get(f"voted_{ballot_id}")
+    return render_template(
+        request, "vote.html", {"ballot": ballot, "has_voted": has_voted}
+    )
 
 
 @router.post("/vote/{ballot_id}", response_class=HTMLResponse)
 async def process_vote(
     request: Request,
-    ballot_id: int,
+    ballot_id: str,
     service: Annotated[BallotService, Depends(get_ballot_service)],
     _: Annotated[None, Depends(validate_csrf)],
     option: Annotated[str, Form()] = "",
     write_in_value: Annotated[str | None, Form()] = None,
 ):
+    if request.cookies.get(f"voted_{ballot_id}"):
+        ballot = await service.get_ballot(ballot_id)
+        return render_template(
+            request,
+            "vote.html",
+            {"ballot": ballot, "error": "You have already voted on this ballot."},
+        )
+
     try:
         # 1. Load the raw form data into our VoteForm model
         form_data = VoteForm(option=option, write_in_value=write_in_value)
@@ -159,7 +179,7 @@ async def process_vote(
 
     except (ValidationError, ValueError, Exception) as e:
         ballot = await service.get_ballot(ballot_id)
-        context: dict[str, Any] = {"ballot": ballot}
+        context: dict[str, object] = {"ballot": ballot}
 
         if isinstance(e, ValidationError):
             error_msg, field_errors = format_pydantic_errors(
@@ -178,15 +198,18 @@ async def process_vote(
     if request.headers.get("HX-Request"):
         response = Response(status_code=204)
         response.headers["HX-Redirect"] = f"/results/{ballot_id}"
+        response.set_cookie(f"voted_{ballot_id}", "true", max_age=60 * 60 * 24 * 365)
         return response
 
-    return RedirectResponse(url=f"/results/{ballot_id}", status_code=303)
+    response = RedirectResponse(url=f"/results/{ballot_id}", status_code=303)
+    response.set_cookie(f"voted_{ballot_id}", "true", max_age=60 * 60 * 24 * 365)
+    return response
 
 
 @router.get("/results/{ballot_id}", response_class=HTMLResponse)
 async def results_page(
     request: Request,
-    ballot_id: int,
+    ballot_id: str,
     service: Annotated[BallotService, Depends(get_ballot_service)],
 ):
     ballot = await service.get_ballot(ballot_id)

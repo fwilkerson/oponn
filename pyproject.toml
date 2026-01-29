@@ -7,8 +7,8 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">=3.12"
-dependencies = ["fastapi[standard] (>=0.128.0,<0.129.0)", "uvicorn (>=0.40.0,<0.41.0)", "sse-starlette (>=3.2.0,<4.0.0)", "beautifulsoup4 (>=4.14.3,<5.0.0)", "itsdangerous (>=2.2.0,<3.0.0)", "sqlalchemy (>=2.0.46,<3.0.0)", "alembic (>=1.18.1,<2.0.0)", "asyncpg (>=0.31.0,<0.32.0)", "gunicorn (>=24.1.1,<25.0.0)", "redis (>=7.1.0,<8.0.0)"]
+requires-python = ">=3.12,<4.0"
+dependencies = ["fastapi[standard] (>=0.128.0,<0.129.0)", "uvicorn (>=0.40.0,<0.41.0)", "sse-starlette (>=3.2.0,<4.0.0)", "beautifulsoup4 (>=4.14.3,<5.0.0)", "itsdangerous (>=2.2.0,<3.0.0)", "sqlalchemy (>=2.0.46,<3.0.0)", "alembic (>=1.18.1,<2.0.0)", "asyncpg (>=0.31.0,<0.32.0)", "gunicorn (>=24.1.1,<25.0.0)", "redis (>=7.1.0,<8.0.0)", "fastapi-sso (>=0.17.0)"]
 
 
 [build-system]
@@ -36,6 +36,7 @@ filterwarnings = [
 venvPath = "."
 venv = ".venv"
 extraPaths = ["src"]
+typeCheckingMode = "recommended"
 
 [tool.ruff]
 line-length = 88

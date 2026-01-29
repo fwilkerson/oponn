@@ -20,7 +20,7 @@ async def test_sse_updates_robust(server_url):
             headers={"HX-Request": "true"},
         )
         assert create_resp.status_code == 204
-        ballot_id = int(create_resp.headers["HX-Redirect"].split("/")[-1])
+        ballot_id = create_resp.headers["HX-Redirect"].split("/")[-1]
 
         # 2. Subscribe to SSE
         sse_url = f"{server_url}/ballots/{ballot_id}/live-results"

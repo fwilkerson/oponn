@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .database import SessionLocal
 from .repositories.ballot_repository import InMemoryBallotRepository
 from .repositories.sql_repository import SqlBallotRepository
+from .repositories.user_repository import InMemoryUserRepository
+from .repositories.sql_user_repository import SqlUserRepository
 from .services.ballot_service import BallotService
+from .services.auth_service import AuthService
 
 # Infrastructure singletons
 templates = Jinja2Templates(directory="templates")
@@ -27,9 +30,14 @@ if OPONN_ENV == "production":
     if not os.getenv("REDIS_URL"):
         raise RuntimeError("REDIS_URL must be set in production mode")
 
-# In-memory repo singleton for when DATABASE_URL is not set
-_in_memory_repo = InMemoryBallotRepository()
-_ballot_service = BallotService(_in_memory_repo, redis_url=os.getenv("REDIS_URL"))
+# In-memory repo singletons for when DATABASE_URL is not set
+_in_memory_ballot_repo = InMemoryBallotRepository()
+_in_memory_user_repo = InMemoryUserRepository()
+
+_ballot_service = BallotService(
+    _in_memory_ballot_repo, redis_url=os.getenv("REDIS_URL")
+)
+_auth_service = AuthService(_in_memory_user_repo)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
@@ -51,14 +59,30 @@ def get_ballot_service(
     """
     if os.getenv("DATABASE_URL"):
         if session is None:
-            # We allow None only if it's explicitly handled (like in the reaper)
-            # but for FastAPI routes, we want to ensure a session exists.
             return _ballot_service
         _ballot_service.repository = SqlBallotRepository(session)
     else:
-        _ballot_service.repository = _in_memory_repo
+        _ballot_service.repository = _in_memory_ballot_repo
 
     return _ballot_service
+
+
+def get_auth_service(
+    session: Annotated[AsyncSession | None, Depends(get_db)] = None,
+) -> AuthService:
+    """
+    Dependency that returns an AuthService.
+    If DATABASE_URL is set, it uses SqlUserRepository with the current session.
+    Otherwise, it uses the global InMemoryUserRepository.
+    """
+    if os.getenv("DATABASE_URL"):
+        if session is None:
+            return _auth_service
+        _auth_service.repository = SqlUserRepository(session)
+    else:
+        _auth_service.repository = _in_memory_user_repo
+
+    return _auth_service
 
 
 async def get_csrf_token(request: Request) -> str:

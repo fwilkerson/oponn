@@ -3,7 +3,12 @@
 {% block title %}oponn | dashboard{% endblock %}
 {% block content %}
     <section>
-        <h2>active_ballots</h2>
+        {% if user_id %}
+            <h2>my_ballots</h2>
+        {% else %}
+            <h2>public_ballots</h2>
+        {% endif %}
+
         {% if ballots %}
             <div class="ballot-list">
                 {% for ballot in ballots %}
@@ -14,26 +19,41 @@
                         </div>
                         <div style="display: flex; gap: 1rem;">
                             <a href="/vote/{{ ballot.ballot_id }}"
-                               style="color: var(--accent-secondary);
+                               style="color: var(--accent-tertiary);
                                       font-size: 0.8rem;
                                       text-decoration: none">vote</a>
                             <a href="/results/{{ ballot.ballot_id }}"
-                               style="color: var(--accent-primary);
+                               style="color: var(--accent-secondary);
                                       font-size: 0.8rem;
                                       text-decoration: none">results</a>
                         </div>
                     </div>
                 {% endfor %}
             </div>
+            {% if user_id %}
+                <div style="margin-top: 2rem">
+                    <a href="/create" class="button button-action">init_ballot</a>
+                </div>
+            {% endif %}
         {% else %}
             <div style="text-align: center;
                         padding: 3rem 0;
                         border: 1px dashed var(--border-color);
                         border-radius: 4px">
-                <p style="color: var(--text-secondary);
-                          margin-bottom: 1.5rem;
-                          font-size: 0.9rem">no_active_ballots_found</p>
-                <a href="/create" class="button">initialize_ballot</a>
+                {% if user_id %}
+                    <p style="color: var(--text-secondary);
+                              margin-bottom: 1.5rem;
+                              font-size: 0.9rem">you_have_not_created_any_ballots</p>
+                    <a href="/create" class="button button-action">init_ballot</a>
+                {% else %}
+                    <p style="color: var(--text-secondary);
+                              margin-bottom: 1.5rem;
+                              font-size: 0.9rem">welcome_to_oponn. init_anonymous_polls_instantly.</p>
+                    <div style="display: flex; gap: 1rem; justify-content: center">
+                        <a href="/create" class="button button-action">init_guest_ballot</a>
+                        <a href="/auth/login/google" class="button button-secondary">sign_in_to_track_history</a>
+                    </div>
+                {% endif %}
             </div>
         {% endif %}
     </section>

@@ -14,7 +14,7 @@ router = APIRouter()
 
 @router.get("/ballots/{ballot_id}/live-results")
 async def get_ballot_live_results(
-    ballot_id: int, service: Annotated[BallotService, Depends(get_ballot_service)]
+    ballot_id: str, service: Annotated[BallotService, Depends(get_ballot_service)]
 ):
     async def event_generator() -> AsyncGenerator[dict[str, str], None]:
         queue = await service.register_sse_client(ballot_id)

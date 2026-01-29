@@ -20,7 +20,12 @@
                 <nav>
                     <a href="/" class="{% if active_page == 'index' %}active{% endif %}">dashboard</a>
                     <a href="/create"
-                       class="{% if active_page == 'create' %}active{% endif %}">create</a>
+                       class="{% if active_page == 'create' %}active{% endif %}">init</a>
+                    {% if user_id %}
+                        <a href="/auth/logout">logout</a>
+                    {% else %}
+                        <a href="/auth/login/google">login</a>
+                    {% endif %}
                 </nav>
             </header>
             <main>

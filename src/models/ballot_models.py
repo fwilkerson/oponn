@@ -177,7 +177,8 @@ class BallotCreateForm(BaseModel):
 
 
 class Ballot(BallotBase):
-    ballot_id: int
+    ballot_id: str
+    owner_id: str | None = None
 
 
 class Vote(BaseModel):

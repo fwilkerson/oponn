@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 import pytest
+from itsdangerous import URLSafeTimedSerializer
 from src.main import app
 from src.models.ballot_models import BallotCreate, Ballot
 from src.dependencies import get_ballot_service
@@ -11,13 +12,19 @@ async def test_dashboard_with_mocked_service(client):
     # Setup mock service
     mock_service = AsyncMock()
     mock_ballot = Ballot(
-        ballot_id=999,
+        ballot_id="mock-123",
+        owner_id="user-123",
         measure="Mocked Ballot",
         options=["Yes", "No"],
         allow_write_in=False,
         start_time=datetime.now(timezone.utc),
     )
     mock_service.list_ballots.return_value = [mock_ballot]
+
+    # Simulate Login
+    signer = URLSafeTimedSerializer("dev_secret_key_change_in_prod", salt="oponn-auth")
+    token = signer.dumps("user-123")
+    client.cookies.set("oponn_session", token)
 
     # Override dependency
     app.dependency_overrides[get_ballot_service] = lambda: mock_service
@@ -26,6 +33,7 @@ async def test_dashboard_with_mocked_service(client):
         response = client.get("/")
         assert response.status_code == 200
         assert "Mocked Ballot" in response.text
+        assert "my_ballots" in response.text
         mock_service.list_ballots.assert_called_once()
     finally:
         # Clean up override
@@ -38,7 +46,7 @@ async def test_dashboard_and_create_navigation(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "oponn" in response.text
-    assert "active_ballots" in response.text
+    assert "public_ballots" in response.text
 
     # Check create page
     response = client.get("/create")
@@ -61,7 +69,7 @@ async def test_full_ballot_lifecycle(client):
         follow_redirects=False,
     )
     assert response.status_code == 204
-    ballot_id = int(response.headers["HX-Redirect"].split("/")[-1])
+    ballot_id = response.headers["HX-Redirect"].split("/")[-1]
 
     # 3. Check vote page
     response = client.get(f"/vote/{ballot_id}")

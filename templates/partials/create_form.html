@@ -1,5 +1,5 @@
 <section id="create-ballot-section">
-    <h2>new_ballot</h2>
+    <h2>init_ballot</h2>
     <form hx-post="/create"
           hx-target="#create-ballot-section"
           hx-swap="outerHTML">
@@ -66,7 +66,9 @@
             <label for="allow_write_in" style="margin-bottom: 0; cursor: pointer;">enable_write_ins</label>
         </div>
         <div style="margin-top: 3rem;">
-            <button type="submit">initialize_ballot</button>
+            <button type="submit" class="button-action">
+                init_ballot <span class="htmx-indicator">...</span>
+            </button>
         </div>
     </form>
 </section>

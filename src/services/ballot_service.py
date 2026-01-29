@@ -17,15 +17,15 @@ class BallotService:
     def __init__(self, repository: BallotRepository, redis_url: str | None = None):
         self.repository: BallotRepository = repository
         # This dictionary is now only for cleanup tracking, not the primary data stream
-        self._sse_queues: dict[int, list[asyncio.Queue[list[Tally]]]] = {}
-        self._locks: dict[int, asyncio.Lock] = {}
+        self._sse_queues: dict[str, list[asyncio.Queue[list[Tally]]]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
 
         # Initialize Redis client if a URL is provided
         self.redis: redis.Redis | None = (
             redis.from_url(redis_url, decode_responses=True) if redis_url else None
         )
 
-    def _get_lock(self, ballot_id: int) -> asyncio.Lock:
+    def _get_lock(self, ballot_id: str) -> asyncio.Lock:
         """Get or create an asyncio.Lock for a specific ballot."""
         if ballot_id not in self._locks:
             self._locks[ballot_id] = asyncio.Lock()
@@ -35,20 +35,22 @@ class BallotService:
         """Retrieve a list of all existing ballots."""
         return await self.repository.list_all()
 
-    async def create_ballot(self, ballot_create: BallotCreate) -> Ballot:
+    async def create_ballot(
+        self, ballot_create: BallotCreate, owner_id: str | None = None
+    ) -> Ballot:
         """Create a new ballot and initialize its SSE client list."""
-        ballot = await self.repository.create(ballot_create)
+        ballot = await self.repository.create(ballot_create, owner_id=owner_id)
         self._sse_queues[ballot.ballot_id] = []
         return ballot
 
-    async def get_ballot(self, ballot_id: int) -> Ballot:
+    async def get_ballot(self, ballot_id: str) -> Ballot:
         """Retrieve a ballot by its ID. Raises BallotNotFoundError if not found."""
         ballot = await self.repository.get_by_id(ballot_id)
         if not ballot:
             raise BallotNotFoundError(f"Ballot {ballot_id} not found")
         return ballot
 
-    async def record_vote(self, ballot_id: int, vote: Vote) -> None:
+    async def record_vote(self, ballot_id: str, vote: Vote) -> None:
         """
         Record a vote for a ballot and notify all workers via Redis.
         Uses a Redis-backed distributed lock to ensure consistency across multiple workers.
@@ -63,7 +65,7 @@ class BallotService:
             async with self._get_lock(ballot_id):
                 await self._do_record_vote(ballot_id, vote)
 
-    async def _do_record_vote(self, ballot_id: int, vote: Vote) -> None:
+    async def _do_record_vote(self, ballot_id: str, vote: Vote) -> None:
         """Inner logic for recording a vote."""
         ballot = await self.get_ballot(ballot_id)
         now = datetime.now(timezone.utc)
@@ -93,13 +95,13 @@ class BallotService:
         for queue in self._sse_queues.get(ballot_id, []):
             await queue.put(updated_counts)
 
-    async def get_vote_counts(self, ballot_id: int) -> list[Tally]:
+    async def get_vote_counts(self, ballot_id: str) -> list[Tally]:
         """Retrieve current vote counts for a ballot."""
         # We check if ballot exists first
         _ = await self.get_ballot(ballot_id)
         return await self.repository.get_tallies(ballot_id)
 
-    async def register_sse_client(self, ballot_id: int) -> asyncio.Queue[list[Tally]]:
+    async def register_sse_client(self, ballot_id: str) -> asyncio.Queue[list[Tally]]:
         """Register a new SSE client for a ballot and return its event queue."""
         _ = await self.get_ballot(ballot_id)
         queue: asyncio.Queue[list[Tally]] = asyncio.Queue()
@@ -109,7 +111,7 @@ class BallotService:
         return queue
 
     async def unregister_sse_client(
-        self, ballot_id: int, queue: asyncio.Queue[list[Tally]]
+        self, ballot_id: str, queue: asyncio.Queue[list[Tally]]
     ):
         """Remove an SSE client's queue from a ballot's notification list."""
         if ballot_id in self._sse_queues:
@@ -155,7 +157,7 @@ class BallotService:
                 _ = self._locks.pop(ballot_id, None)
 
     async def listen_for_updates(
-        self, ballot_id: int, queue: asyncio.Queue[list[Tally]]
+        self, ballot_id: str, queue: asyncio.Queue[list[Tally]]
     ):
         """
         Listen to Redis Pub/Sub for updates to a specific ballot and push them to the local queue.
