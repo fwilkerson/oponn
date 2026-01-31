@@ -131,7 +131,7 @@ h2::before {
     margin-bottom: 1.5rem;
 }
 
-.form-row > div {
+.form-row>div {
     flex: 1;
 }
 
