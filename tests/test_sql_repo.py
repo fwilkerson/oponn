@@ -1,6 +1,6 @@
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from src.models.ballot_models import BallotCreate
 from src.repositories.models import Base
 from src.repositories.sql_ballot_repository import SqlBallotRepository
@@ -19,7 +19,7 @@ def db_url(postgres_container):
 
 
 @pytest_asyncio.fixture(scope="session")
-async def setup_database(db_url):
+async def setup_database(db_url: str):
     # Run migrations
     engine = create_async_engine(db_url)
     async with engine.begin() as conn:
@@ -29,7 +29,7 @@ async def setup_database(db_url):
 
 
 @pytest_asyncio.fixture
-async def db_session(db_url, setup_database):
+async def db_session(db_url: str, _):
     engine = create_async_engine(db_url)
     Session = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with Session() as session:
@@ -38,12 +38,12 @@ async def db_session(db_url, setup_database):
 
 
 @pytest_asyncio.fixture
-async def repository(db_session):
+async def repository(db_session: AsyncSession):
     return SqlBallotRepository(db_session)
 
 
 @pytest.mark.asyncio
-async def test_create_and_get_ballot(repository):
+async def test_create_and_get_ballot(repository: SqlBallotRepository):
     bc = BallotCreate(
         measure="SQL Test Ballot", options=["Yes", "No"], allow_write_in=True
     )
@@ -59,9 +59,9 @@ async def test_create_and_get_ballot(repository):
 
 
 @pytest.mark.asyncio
-async def test_list_all(repository):
+async def test_list_all(repository: SqlBallotRepository):
     bc = BallotCreate(measure="Ballot 1", options=["A", "B"], allow_write_in=False)
-    await repository.create(bc)
+    _ = await repository.create(bc)
 
     ballots = await repository.list_all()
     assert len(ballots) >= 1
@@ -69,7 +69,7 @@ async def test_list_all(repository):
 
 
 @pytest.mark.asyncio
-async def test_add_vote_and_tally(repository):
+async def test_add_vote_and_tally(repository: SqlBallotRepository):
     bc = BallotCreate(
         measure="Vote Test", options=["Option 1", "Option 2"], allow_write_in=True
     )

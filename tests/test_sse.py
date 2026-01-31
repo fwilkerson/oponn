@@ -1,10 +1,11 @@
+import asyncio
+
 import httpx
 import pytest
-import asyncio
 
 
 @pytest.mark.asyncio
-async def test_sse_updates_robust(server_url):
+async def test_sse_updates_robust(server_url: str):
     """
     Test that voting on a ballot triggers an SSE update on the live results page.
     """
@@ -48,7 +49,7 @@ async def test_sse_updates_robust(server_url):
             # 3. Cast a vote in a separate task
             async def cast_vote():
                 await asyncio.sleep(0.5)
-                await client.post(
+                _ = await client.post(
                     f"{server_url}/vote/{ballot_id}", data={"option": "Yes"}
                 )
 

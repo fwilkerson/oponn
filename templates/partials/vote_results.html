@@ -5,20 +5,22 @@
         {% set is_winner = (res.count == max_votes and max_votes > 0) %}
         <div class="progress-container">
             <div class="progress-header">
-                <span style="color: {% if is_winner %}var(--accent-primary){% else %}var(--text-primary){% endif %}; font-size: 0.9rem;">
-                    {% if is_winner %}* {% endif %}{{ res.option }}
+                <span style="color: {% if is_winner %}var(--accent-primary){% else %}var(--text-primary){% endif %};
+                             font-size: 0.9rem">
+                    {% if is_winner %}*{% endif %}
+                    {{ res.option }}
                 </span>
                 <span style="color: {% if is_winner %}var(--accent-primary){% else %}var(--text-secondary){% endif %};
                              font-weight: 700;
                              font-size: 0.9rem">{{ res.count }}</span>
             </div>
             <div class="progress-bar-bg"
-                 style="border-color: {% if is_winner %}var(--accent-primary){% else %}var(--border-color){% endif %};">
+                 style="border-color: {% if is_winner %}var(--accent-primary){% else %}var(--border-color){% endif %}">
                 {% set percent = (res.count / total_votes * 100) if total_votes > 0 else 0 %}
                 <div class="progress-bar-fill"
                      style="width: {{ percent }}%;
                             background-color: var(--accent-primary);
-                            opacity: {% if is_winner %}1{% else %}0.4{% endif %};"></div>
+                            opacity: {% if is_winner %}1{% else %}0.4{% endif %}"></div>
             </div>
         </div>
     {% endfor %}

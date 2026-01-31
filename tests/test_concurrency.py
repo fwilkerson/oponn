@@ -1,8 +1,9 @@
 import asyncio
+
 import pytest
+from src.models.ballot_models import BallotCreate, Vote
 from src.repositories.ballot_repository import InMemoryBallotRepository
 from src.services.ballot_service import BallotService
-from src.models.ballot_models import BallotCreate, Vote
 
 
 @pytest.mark.asyncio

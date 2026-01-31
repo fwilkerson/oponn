@@ -7,7 +7,8 @@
             <span>[*] you_have_already_voted_on_this_ballot.</span>
         </div>
         <div style="margin-top: 1rem;">
-            <a href="/results/{{ ballot.ballot_id }}" class="button button-secondary">view_current_results</a>
+            <a href="/results/{{ ballot.ballot_id }}"
+               class="button button-secondary">view_current_results</a>
         </div>
     {% else %}
         <form hx-post="/vote/{{ ballot.ballot_id }}"
@@ -28,10 +29,7 @@
                 {% if ballot.allow_write_in %}
                     <div class="radio-item">
                         <label class="radio-label {% if field_errors and (field_errors.option or field_errors.write_in_value) %}invalid{% endif %}">
-                            <input type="radio"
-                                   name="option"
-                                   value="__write_in__"
-                                   id="write-in-radio" />
+                            <input type="radio" name="option" value="__write_in__" id="write-in-radio" />
                             <span style="display: flex;
                                          gap: 0.5rem;
                                          width: 100%;

@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi_sso.sso.google import GoogleSSO
+from fastapi_sso.sso.github import GithubSSO
 from itsdangerous import URLSafeTimedSerializer
 
 from ..dependencies import get_auth_service
@@ -24,6 +25,15 @@ google_sso = GoogleSSO(
     allow_insecure_http=True,
 )
 
+github_sso = GithubSSO(
+    client_id=os.getenv("GITHUB_CLIENT_ID", "mock-id"),
+    client_secret=os.getenv("GITHUB_CLIENT_SECRET", "mock-secret"),
+    redirect_uri=os.getenv(
+        "GITHUB_REDIRECT_URI", "http://localhost:8000/auth/callback/github"
+    ),
+    allow_insecure_http=True,
+)
+
 
 @router.get("/login/{provider}")
 async def login(provider: str):
@@ -36,6 +46,13 @@ async def login(provider: str):
                 url="/auth/callback/google?code=mock_code&state=mock_state"
             )
         return await google_sso.get_login_redirect()
+    elif provider == "github":
+        if os.getenv("GITHUB_CLIENT_ID", "mock-id") == "mock-id":
+            # Development Mock Login
+            return RedirectResponse(
+                url="/auth/callback/github?code=mock_code&state=mock_state"
+            )
+        return await github_sso.get_login_redirect()
     raise HTTPException(status_code=404, detail="Provider not supported")
 
 
@@ -61,9 +78,19 @@ async def callback(
                 raise HTTPException(status_code=400, detail="Login failed")
             user_email = user.email
             provider_id = user.id or user.email  # Fallback if ID is missing
+    elif provider == "github":
+        if os.getenv("GITHUB_CLIENT_ID", "mock-id") == "mock-id":
+            # Mock User
+            user_email = "dev_github@example.com"
+            provider_id = "mock_github_id_123"
+        else:
+            user = await github_sso.verify_and_process(request)
+            if not user or not user.email:
+                raise HTTPException(status_code=400, detail="Login failed")
+            user_email = user.email
+            provider_id = user.id or user.email
     else:
         raise HTTPException(status_code=404, detail="Provider not supported")
-
     # Persist User
     db_user = await auth_service.authenticate_user(user_email, provider, provider_id)
 

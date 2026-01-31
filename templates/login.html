@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+
+{% block title %}oponn | sign_in{% endblock %}
+{% block content %}
+    <section>
+        <h2>sign_in</h2>
+        <div style="text-align: center;
+                    padding: 3rem 0;
+                    border: 1px dashed var(--border-color);
+                    border-radius: 4px">
+            <p style="color: var(--text-secondary);
+                      margin-bottom: 2rem;
+                      font-size: 0.9rem">select_provider</p>
+            <div style="display: flex;
+                        flex-direction: column;
+                        gap: 1rem;
+                        max-width: 300px;
+                        margin: 0 auto 2rem auto">
+                <a href="/auth/login/google"
+                   class="button button-secondary"
+                   style="width: 100%;
+                          box-sizing: border-box;
+                          text-align: center">sign_in_with_google</a>
+                <a href="/auth/login/github"
+                   class="button button-secondary"
+                   style="width: 100%;
+                          box-sizing: border-box;
+                          text-align: center">sign_in_with_github</a>
+            </div>
+            <div>
+                <a href="/create"
+                   style="color: var(--accent-tertiary);
+                          font-size: 0.9rem;
+                          text-decoration: none">&gt; continue_as_guest</a>
+            </div>
+        </div>
+    </section>
+{% endblock %}

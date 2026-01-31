@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from bs4 import BeautifulSoup
+from fastapi.testclient import TestClient
 from itsdangerous import URLSafeTimedSerializer
 from src.dependencies import get_ballot_service
 from src.main import app
@@ -10,7 +11,7 @@ from src.models.ballot_models import Ballot, BallotCreate
 
 
 @pytest.mark.asyncio
-async def test_dashboard_with_mocked_service(client):
+async def test_dashboard_with_mocked_service(client: TestClient):
     # Setup mock service
     mock_service = AsyncMock()
     mock_ballot = Ballot(
@@ -43,7 +44,7 @@ async def test_dashboard_with_mocked_service(client):
 
 
 @pytest.mark.asyncio
-async def test_dashboard_and_create_navigation(client):
+async def test_dashboard_and_create_navigation(client: TestClient):
     # Check dashboard
     response = client.get("/")
     assert response.status_code == 200
@@ -57,7 +58,7 @@ async def test_dashboard_and_create_navigation(client):
 
 
 @pytest.mark.asyncio
-async def test_full_ballot_lifecycle(client):
+async def test_full_ballot_lifecycle(client: TestClient):
     # 1. Create a ballot
     response = client.post(
         "/create",
@@ -94,7 +95,7 @@ async def test_full_ballot_lifecycle(client):
 
 
 @pytest.mark.asyncio
-async def test_scheduled_ballot_validation(client):
+async def test_scheduled_ballot_validation(client: TestClient):
     # Test empty string for scheduled ballot (Required field check)
     response = client.post(
         "/create",
@@ -128,7 +129,7 @@ async def test_scheduled_ballot_validation(client):
 
 
 @pytest.mark.asyncio
-async def test_vote_button_states(client):
+async def test_vote_button_states(client: TestClient):
     service = get_ballot_service()
 
     # Create a future ballot via service
@@ -144,6 +145,7 @@ async def test_vote_button_states(client):
     response = client.get(f"/vote/{ballot.ballot_id}")
     soup = BeautifulSoup(response.text, "html.parser")
     button = soup.find("button", {"type": "submit"})
+    assert button is not None
     assert "button-action" in button["class"]
     assert button.has_attr("disabled")
     assert "starts in" in response.text
@@ -163,13 +165,14 @@ async def test_vote_button_states(client):
     response = client.get(f"/vote/{ballot_ended.ballot_id}")
     soup = BeautifulSoup(response.text, "html.parser")
     button = soup.find("button", {"type": "submit"})
+    assert button is not None
     assert "button-action" in button["class"]
     assert button.has_attr("disabled")
     assert "voting closed" in response.text
 
 
 @pytest.mark.asyncio
-async def test_partial_rendering(client):
+async def test_partial_rendering(client: TestClient):
     response = client.get("/partials/start-time-input?start_time_type=scheduled")
     assert response.status_code == 200
     assert "commencement_timestamp" in response.text

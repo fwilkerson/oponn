@@ -32,7 +32,7 @@ def dev():
 
 @app.command()
 def prod(
-    workers: int = typer.Option(2, help="Number of Gunicorn workers"),
+    workers: int = typer.Option(2, help="Number of Gunicorn workers"),  # pyright: ignore[reportCallInDefaultInitializer]
 ):
     """Run the app with Gunicorn in production mode (strict dependencies)."""
     # Default to local docker-compose PG if not set
@@ -153,7 +153,7 @@ def format_ui():
 @app.command()
 def typecheck():
     """Check types with basedpyright."""
-    run_cmd(["basedpyright", "src", "tools", "dev.py"])
+    run_cmd(["basedpyright", "src", "tests", "tools", "dev.py"])
 
 
 @app.command()
@@ -167,7 +167,7 @@ def simulate(
 
 @app.command()
 def services(
-    action: str = typer.Argument(..., help="start or stop"),
+    action: str = typer.Argument(..., help="start or stop"),  # pyright: ignore[reportCallInDefaultInitializer]
 ):
     """Manage backend services (Postgres & Redis) via Docker Compose."""
     if action == "start":

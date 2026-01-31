@@ -24,7 +24,8 @@
                     {% if user_id %}
                         <a href="/auth/logout">logout</a>
                     {% else %}
-                        <a href="/auth/login/google">login</a>
+                        <a href="/login"
+                           class="{% if active_page == 'login' %}active{% endif %}">sign_in</a>
                     {% endif %}
                 </nav>
             </header>

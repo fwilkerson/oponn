@@ -1,9 +1,11 @@
-from src.main import app
-from src.dependencies import validate_csrf
 import os
 
+from fastapi.testclient import TestClient
+from src.dependencies import validate_csrf
+from src.main import app
 
-def test_measure_length_validation(client):
+
+def test_measure_length_validation(client: TestClient):
     # Too short
     response = client.post(
         "/create",
@@ -23,7 +25,7 @@ def test_measure_length_validation(client):
     assert "at most 255 characters" in response.text
 
 
-def test_options_count_validation(client):
+def test_options_count_validation(client: TestClient):
     # No write-in: need 2 options
     response = client.post(
         "/create",
@@ -44,7 +46,7 @@ def test_options_count_validation(client):
     assert "HX-Redirect" in response.headers
 
 
-def test_option_length_validation(client):
+def test_option_length_validation(client: TestClient):
     # Option too long
     response = client.post(
         "/create",
@@ -55,7 +57,7 @@ def test_option_length_validation(client):
     assert "between 1 and 64 characters" in response.text
 
 
-def test_vote_write_in_length_validation(client):
+def test_vote_write_in_length_validation(client: TestClient):
     # Create ballot allowing write-ins
     response = client.post(
         "/create",
@@ -74,13 +76,13 @@ def test_vote_write_in_length_validation(client):
     assert "at most 64 characters" in response.text
 
 
-def test_csrf_protection(client):
+def test_csrf_protection(client: TestClient):
     # Ensure environment variable doesn't disable it
     old_val = os.environ.get("OPONN_SKIP_CSRF")
     os.environ["OPONN_SKIP_CSRF"] = "false"
 
     # Enable CSRF check for this test
-    app.dependency_overrides.pop(validate_csrf, None)
+    _ = app.dependency_overrides.pop(validate_csrf, None)
 
     try:
         # Try to post without CSRF Token
@@ -95,10 +97,10 @@ def test_csrf_protection(client):
         if old_val:
             os.environ["OPONN_SKIP_CSRF"] = old_val
         else:
-            os.environ.pop("OPONN_SKIP_CSRF", None)
+            _ = os.environ.pop("OPONN_SKIP_CSRF", None)
 
 
-def test_scheduled_start_time_persistence(client):
+def test_scheduled_start_time_persistence(client: TestClient):
     """Regression test: Ensure scheduled_start_time persists on validation error."""
     # 1. Submit with valid scheduled time but invalid measure (too short)
     test_time = "2026-01-25T15:00:00Z"

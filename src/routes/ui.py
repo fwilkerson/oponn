@@ -60,6 +60,15 @@ async def dashboard(
     )
 
 
+@router.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    return render_template(
+        request,
+        "login.html",
+        {"active_page": "login"},
+    )
+
+
 @router.get("/create", response_class=HTMLResponse)
 async def create_page(request: Request):
     return render_template(

@@ -1,5 +1,5 @@
-import pytest
 import httpx
+import pytest
 from bs4 import BeautifulSoup
 
 # This test suite provides high confidence by simulating HTMX and SSE behavior
@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 
 
 @pytest.mark.asyncio
-async def test_create_ballot_and_vote_functional(server_url):
+async def test_create_ballot_and_vote_functional(server_url: str):
     """Verifies the full lifecycle of a ballot using functional simulation."""
     async with httpx.AsyncClient() as client:
         # 1. Create a ballot (simulate HTMX request)
@@ -53,7 +53,7 @@ async def test_create_ballot_and_vote_functional(server_url):
 
 
 @pytest.mark.asyncio
-async def test_htmx_validation_errors_functional(server_url):
+async def test_htmx_validation_errors_functional(server_url: str):
     """Verifies that validation errors return HTMX partials as expected."""
     async with httpx.AsyncClient() as client:
         # 1. Submit too short measure
@@ -81,7 +81,7 @@ async def test_htmx_validation_errors_functional(server_url):
 
 
 @pytest.mark.asyncio
-async def test_sse_live_updates_functional(server_url):
+async def test_sse_live_updates_functional(server_url: str):
     """Verifies SSE updates by monitoring the stream while casting a vote."""
     async with httpx.AsyncClient(timeout=10.0) as client:
         # 1. Create ballot
@@ -113,7 +113,9 @@ async def test_sse_live_updates_functional(server_url):
                 break
 
             # 3. Vote in background
-            await client.post(f"{server_url}/vote/{ballot_id}", data={"option": "Yes"})
+            _ = await client.post(
+                f"{server_url}/vote/{ballot_id}", data={"option": "Yes"}
+            )
 
             # 4. Check for update event
             async for msg in messages:

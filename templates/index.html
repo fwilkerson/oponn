@@ -8,7 +8,6 @@
         {% else %}
             <h2>public_ballots</h2>
         {% endif %}
-
         {% if ballots %}
             <div class="ballot-list">
                 {% for ballot in ballots %}
@@ -51,7 +50,7 @@
                               font-size: 0.9rem">welcome_to_oponn. init_anonymous_polls_instantly.</p>
                     <div style="display: flex; gap: 1rem; justify-content: center">
                         <a href="/create" class="button button-action">init_guest_ballot</a>
-                        <a href="/auth/login/google" class="button button-secondary">sign_in_to_track_history</a>
+                        <a href="/login" class="button button-secondary">sign_in</a>
                     </div>
                 {% endif %}
             </div>
