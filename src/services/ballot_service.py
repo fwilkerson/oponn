@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as redis
+import structlog
 
 from ..models.ballot_models import Ballot, BallotCreate, Tally, Vote
 from ..models.exceptions import (
@@ -11,6 +12,8 @@ from ..models.exceptions import (
     VotingNotOpenError,
 )
 from ..repositories.ballot_repository import BallotRepository
+
+logger = structlog.stdlib.get_logger()
 
 
 class BallotService:
@@ -41,6 +44,13 @@ class BallotService:
         """Create a new ballot and initialize its SSE client list."""
         ballot = await self.repository.create(ballot_create, owner_id=owner_id)
         self._sse_queues[ballot.ballot_id] = []
+
+        logger.info(
+            "ballot.created",
+            ballot_id=ballot.ballot_id,
+            owner_id=owner_id,
+            measure=ballot.measure,
+        )
         return ballot
 
     async def get_ballot(self, ballot_id: str) -> Ballot:
@@ -57,13 +67,28 @@ class BallotService:
         """
         lock_name = f"lock:ballot:{ballot_id}"
 
-        if self.redis:
-            # timeout=10 to prevent deadlocks if a worker crashes
-            async with self.redis.lock(lock_name, timeout=10):
-                await self._do_record_vote(ballot_id, vote)
-        else:
-            async with self._get_lock(ballot_id):
-                await self._do_record_vote(ballot_id, vote)
+        try:
+            if self.redis:
+                # timeout=10 to prevent deadlocks if a worker crashes
+                async with self.redis.lock(lock_name, timeout=10):
+                    await self._do_record_vote(ballot_id, vote)
+            else:
+                async with self._get_lock(ballot_id):
+                    await self._do_record_vote(ballot_id, vote)
+
+            logger.info(
+                "vote.recorded",
+                ballot_id=ballot_id,
+                option=vote.option,
+                is_write_in=vote.is_write_in,
+            )
+        except Exception:
+            # We log the exception here to ensure visibility, then re-raise
+            # so the controller can handle the user response.
+            logger.error(
+                "vote.failed", ballot_id=ballot_id, option=vote.option, exc_info=True
+            )
+            raise
 
     async def _do_record_vote(self, ballot_id: str, vote: Vote) -> None:
         """Inner logic for recording a vote."""
@@ -133,6 +158,8 @@ class BallotService:
         queue_ids = set(self._sse_queues.keys())
         all_ids = lock_ids.union(queue_ids)
 
+        cleaned_count = 0
+
         for ballot_id in all_ids:
             try:
                 ballot = await self.get_ballot(ballot_id)
@@ -146,15 +173,21 @@ class BallotService:
                         and not self._sse_queues[ballot_id]
                     ):
                         del self._sse_queues[ballot_id]
+                        cleaned_count += 1
 
                     # 2. Handle Locks
                     if ballot_id in self._locks:
                         del self._locks[ballot_id]
+                        cleaned_count += 1
 
             except BallotNotFoundError:
                 # Ballot was deleted from DB? Clean up everything.
                 _ = self._sse_queues.pop(ballot_id, None)
                 _ = self._locks.pop(ballot_id, None)
+                cleaned_count += 1
+
+        if cleaned_count > 0:
+            logger.info("metadata.cleanup", cleaned_items=cleaned_count)
 
     async def listen_for_updates(
         self, ballot_id: str, queue: asyncio.Queue[list[Tally]]
@@ -170,6 +203,8 @@ class BallotService:
         channel = f"ballot:{ballot_id}:updates"
         await pubsub.subscribe(channel)
 
+        logger.debug("sse.redis_subscribe", ballot_id=ballot_id, channel=channel)
+
         try:
             async for message in pubsub.listen():
                 if message["type"] == "message":
@@ -180,6 +215,7 @@ class BallotService:
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.close()
+            logger.debug("sse.redis_unsubscribe", ballot_id=ballot_id)
 
     @staticmethod
     def format_time_delta(diff: timedelta) -> str:

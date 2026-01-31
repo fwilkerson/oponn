@@ -3,16 +3,20 @@ import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request, Response
 from starlette.staticfiles import StaticFiles
 
 from .dependencies import CSRF_COOKIE_NAME, get_ballot_service
+from .logging_conf import configure_logging
 from .models.exceptions import (
     BallotNotFoundError,
     InvalidOptionError,
     VotingNotOpenError,
 )
 from .routes import auth, sse, ui
+
+logger = structlog.stdlib.get_logger()
 
 
 @asynccontextmanager
@@ -21,10 +25,14 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     Handle startup and shutdown events.
     Starts the background metadata reaper.
     """
-    # Startup: Start background tasks
+    # Startup: Configure logging and start background tasks
+    configure_logging()
+    logger.info("lifecycle.startup", msg="Application starting up")
+
     reaper_task = asyncio.create_task(background_reaper())
     yield
     # Shutdown: Stop background tasks
+    logger.info("lifecycle.shutdown", msg="Application shutting down")
     __ = reaper_task.cancel()
     try:
         await reaper_task
@@ -57,7 +65,7 @@ async def background_reaper():
                 await service.cleanup_stale_metadata()
 
         except Exception as e:
-            print(f"Error in background reaper: {e}")
+            logger.error("background_reaper.error", error=str(e))
 
 
 app = FastAPI(title="Oponn Voting Service", lifespan=lifespan)
@@ -100,12 +108,14 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.exception_handler(BallotNotFoundError)
 async def ballot_not_found_handler(_request: Request, exc: BallotNotFoundError):
+    logger.warning("http.not_found", error=str(exc))
     raise HTTPException(status_code=404, detail=str(exc))
 
 
 @app.exception_handler(VotingNotOpenError)
 @app.exception_handler(InvalidOptionError)
 async def domain_error_handler(_request: Request, exc: Exception):
+    logger.warning("http.bad_request", error=str(exc))
     raise HTTPException(status_code=400, detail=str(exc))
 
 
