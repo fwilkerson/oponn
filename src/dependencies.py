@@ -1,18 +1,24 @@
 import os
 from collections.abc import AsyncGenerator
-from typing import Annotated, cast
+from typing import Annotated
 
 from fastapi import Depends, Form, Header, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import SessionLocal
-from .repositories.ballot_repository import InMemoryBallotRepository
+from .repositories.ballot_repository import (
+    BallotRepository,
+    InMemoryBallotRepository,
+)
 from .repositories.sql_ballot_repository import SqlBallotRepository
 from .repositories.sql_user_repository import SqlUserRepository
-from .repositories.user_repository import InMemoryUserRepository
+from .repositories.user_repository import (
+    InMemoryUserRepository,
+    UserRepository,
+)
 from .services.auth_service import AuthService
-from .services.ballot_service import BallotService
+from .services.ballot_service import BallotService, BallotStateManager
 from .services.crypto_service import CryptoService
 from redis import asyncio as aioredis
 
@@ -26,12 +32,18 @@ CSRF_COOKIE_NAME = "oponn_csrf_token"
 OPONN_ENV = os.getenv("OPONN_ENV", "development").lower()
 REDIS_URL = os.getenv("REDIS_URL")
 
-# Initialize Redis
+# Initialize Redis client as a singleton
 _redis_client: aioredis.Redis | None = (
     aioredis.from_url(REDIS_URL, decode_responses=False) if REDIS_URL else None
 )
 
+# Initialize other singletons
 _crypto_service: CryptoService | None = None
+_ballot_state_manager = BallotStateManager()
+
+# In-memory repo singletons
+_in_memory_ballot_repo = InMemoryBallotRepository()
+_in_memory_user_repo = InMemoryUserRepository()
 
 
 def get_crypto_service() -> CryptoService:
@@ -54,17 +66,6 @@ if OPONN_ENV == "production":
     if not REDIS_URL:
         raise RuntimeError("REDIS_URL must be set in production mode")
 
-# In-memory repo singletons for when DATABASE_URL is not set
-_in_memory_ballot_repo = InMemoryBallotRepository()
-_in_memory_user_repo = InMemoryUserRepository()
-
-_ballot_service = BallotService(
-    _in_memory_ballot_repo,
-    crypto=cast(CryptoService, cast(object, None)),
-    redis_url=REDIS_URL,
-)
-_auth_service = AuthService(_in_memory_user_repo)
-
 
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
     """Dependency for getting a DB session."""
@@ -79,38 +80,37 @@ def get_ballot_service(
     session: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> BallotService:
     """
-    Dependency that returns a BallotService.
-    If DATABASE_URL is set, it uses SqlBallotRepository with the current session.
-    Otherwise, it uses the global InMemoryBallotRepository.
+    Dependency that returns a fresh BallotService instance per request.
+    This avoids race conditions where multiple requests might share a singleton
+    service while having different request-scoped repositories.
     """
-    _ballot_service.crypto = get_crypto_service()
-
-    if os.getenv("DATABASE_URL"):
-        if session is None:
-            return _ballot_service
-        _ballot_service.repository = SqlBallotRepository(session)
+    repo: BallotRepository
+    if os.getenv("DATABASE_URL") and session:
+        repo = SqlBallotRepository(session)
     else:
-        _ballot_service.repository = _in_memory_ballot_repo
+        repo = _in_memory_ballot_repo
 
-    return _ballot_service
+    return BallotService(
+        repository=repo,
+        crypto=get_crypto_service(),
+        state_manager=_ballot_state_manager,
+        redis_client=_redis_client,
+    )
 
 
 def get_auth_service(
     session: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> AuthService:
     """
-    Dependency that returns an AuthService.
-    If DATABASE_URL is set, it uses SqlUserRepository with the current session.
-    Otherwise, it uses the global InMemoryUserRepository.
+    Dependency that returns a fresh AuthService instance per request.
     """
-    if os.getenv("DATABASE_URL"):
-        if session is None:
-            return _auth_service
-        _auth_service.repository = SqlUserRepository(session)
+    repo: UserRepository
+    if os.getenv("DATABASE_URL") and session:
+        repo = SqlUserRepository(session)
     else:
-        _auth_service.repository = _in_memory_user_repo
+        repo = _in_memory_user_repo
 
-    return _auth_service
+    return AuthService(repository=repo)
 
 
 async def get_csrf_token(request: Request) -> str:

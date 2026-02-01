@@ -43,25 +43,19 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
 async def background_reaper():
     """Periodically clean up stale ballot metadata."""
     from .database import SessionLocal
-    from .repositories.sql_ballot_repository import SqlBallotRepository
 
     while True:
         try:
             await asyncio.sleep(60)  # Reap every 60 seconds
-            service = get_ballot_service(session=None)
 
-            # If we are using SQL, we need to provide a session for this "reap cycle"
+            # If we are using SQL, we need to provide a session
             if SessionLocal is not None:
                 async with SessionLocal() as session:
-                    # Temporarily point the service to a repository using this session
-                    original_repo = service.repository
-                    service.repository = SqlBallotRepository(session)
-                    try:
-                        await service.cleanup_stale_metadata()
-                    finally:
-                        service.repository = original_repo
+                    service = get_ballot_service(session=session)
+                    await service.cleanup_stale_metadata()
             else:
                 # In-memory mode
+                service = get_ballot_service(session=None)
                 await service.cleanup_stale_metadata()
 
         except Exception as e:

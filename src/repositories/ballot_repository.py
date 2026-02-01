@@ -65,11 +65,11 @@ class InMemoryBallotRepository(BallotRepository):
     _opt_id_counter: int
 
     def __init__(self):
-        self.ballots_db: dict[str, BallotTable] = {}
-        self.votes_db: dict[str, dict[int, int]] = {}
-        self.options_db: dict[str, list[dict[str, object]]] = {}  # ballot_id -> list of options
-        self._lock: asyncio.Lock = asyncio.Lock()
-        self._opt_id_counter: int = 1
+        self.ballots_db = {}
+        self.votes_db = {}
+        self.options_db = {}  # ballot_id -> list of options
+        self._lock = asyncio.Lock()
+        self._opt_id_counter = 1
 
     @override
     async def list_all(self) -> list[BallotTable]:

@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 
-@pytest.mark.asyncio
 async def test_sse_updates_robust(server_url: str):
     """
     Test that voting on a ballot triggers an SSE update on the live results page.

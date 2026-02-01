@@ -29,7 +29,7 @@ class CryptoService:
         self.redis = redis_client
 
         # L1 Cache: ballot_id -> (keyset_handle, expiry)
-        self._l1_cache: dict[str, tuple[tink.KeysetHandle, float]] = {}
+        self._l1_cache = {}
         self._l1_ttl = 60  # 1 minute
 
         if master_keyset_json:

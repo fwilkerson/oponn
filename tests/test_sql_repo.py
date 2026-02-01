@@ -48,7 +48,6 @@ def crypto():
     return CryptoService()
 
 
-@pytest.mark.asyncio
 async def test_create_and_get_ballot(
     repository: SqlBallotRepository, crypto: CryptoService
 ):
@@ -75,7 +74,6 @@ async def test_create_and_get_ballot(
     assert fetched.encrypted_measure == enc_measure
 
 
-@pytest.mark.asyncio
 async def test_list_all(repository: SqlBallotRepository, crypto: CryptoService):
     ballot_id = secrets.token_urlsafe(16)
     keyset = crypto.generate_ballot_keyset()
@@ -96,7 +94,6 @@ async def test_list_all(repository: SqlBallotRepository, crypto: CryptoService):
     assert any(b.id == ballot_id for b in ballots)
 
 
-@pytest.mark.asyncio
 async def test_add_vote_and_tally(
     repository: SqlBallotRepository, crypto: CryptoService
 ):

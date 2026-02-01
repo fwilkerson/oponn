@@ -1,13 +1,11 @@
 import asyncio
 
-import pytest
 from src.models.ballot_models import BallotCreate, Vote
 from src.repositories.ballot_repository import InMemoryBallotRepository
-from src.services.ballot_service import BallotService
+from src.services.ballot_service import BallotService, BallotStateManager
 from src.services.crypto_service import CryptoService
 
 
-@pytest.mark.asyncio
 async def test_concurrent_voting_consistency():
     """
     Simulates many concurrent users voting on the same ballot
@@ -17,7 +15,8 @@ async def test_concurrent_voting_consistency():
 
     repo = InMemoryBallotRepository()
     crypto = CryptoService(master_keyset_json=TEST_KEYSET)
-    service = BallotService(repo, crypto=crypto)
+    state = BallotStateManager()
+    service = BallotService(repo, crypto=crypto, state_manager=state)
 
     # Create a ballot
     bc = BallotCreate(
@@ -53,13 +52,13 @@ async def test_concurrent_voting_consistency():
     print(f"Concurrency test passed: {option_a_tally.count} votes recorded correctly.")
 
 
-@pytest.mark.asyncio
 async def test_high_concurrency_mixed_options():
     from tests.conftest import TEST_KEYSET
 
     repo = InMemoryBallotRepository()
     crypto = CryptoService(master_keyset_json=TEST_KEYSET)
-    service = BallotService(repo, crypto=crypto)
+    state = BallotStateManager()
+    service = BallotService(repo, crypto=crypto, state_manager=state)
 
     bc = BallotCreate(
         measure="Mixed Concurrent", options=["A", "B"], allow_write_in=True

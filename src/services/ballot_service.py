@@ -2,6 +2,7 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
+from anyio import to_thread
 from redis import asyncio as aioredis
 import structlog
 
@@ -18,35 +19,45 @@ from ..repositories.models import BallotTable
 logger = structlog.stdlib.get_logger()
 
 
+class BallotStateManager:
+    """
+    Singleton container for shared in-memory state.
+    Holds asyncio Locks and SSE Queues that must persist across requests.
+    """
+
+    def __init__(self):
+        self._sse_queues: dict[str, list[asyncio.Queue[list[Tally]]]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def get_lock(self, ballot_id: str) -> asyncio.Lock:
+        """Get or create an asyncio.Lock for a specific ballot."""
+        if ballot_id not in self._locks:
+            self._locks[ballot_id] = asyncio.Lock()
+        return self._locks[ballot_id]
+
+    def clear(self):
+        """Helper for testing to reset state."""
+        self._sse_queues.clear()
+        self._locks.clear()
+
+
 class BallotService:
     repository: BallotRepository
     crypto: CryptoService
-    _sse_queues: dict[str, list[asyncio.Queue[list[Tally]]]]
-    _locks: dict[str, asyncio.Lock]
+    state: BallotStateManager
     redis: aioredis.Redis | None
 
     def __init__(
         self,
         repository: BallotRepository,
         crypto: CryptoService,
-        redis_url: str | None = None,
+        state_manager: BallotStateManager,
+        redis_client: aioredis.Redis | None = None,
     ):
-        self.repository: BallotRepository = repository
-        self.crypto: CryptoService = crypto
-        # This dictionary is now only for cleanup tracking, not the primary data stream
-        self._sse_queues: dict[str, list[asyncio.Queue[list[Tally]]]] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
-
-        # Initialize Redis client if a URL is provided
-        self.redis: aioredis.Redis | None = (
-            aioredis.from_url(redis_url, decode_responses=True) if redis_url else None
-        )
-
-    def _get_lock(self, ballot_id: str) -> asyncio.Lock:
-        """Get or create an asyncio.Lock for a specific ballot."""
-        if ballot_id not in self._locks:
-            self._locks[ballot_id] = asyncio.Lock()
-        return self._locks[ballot_id]
+        self.repository = repository
+        self.crypto = crypto
+        self.state = state_manager
+        self.redis = redis_client
 
     async def list_ballots(self) -> list[Ballot]:
         """Retrieve a list of all existing ballots."""
@@ -62,19 +73,26 @@ class BallotService:
             table.id, table.encrypted_dek
         )
 
-        measure = self.crypto.decrypt_string(
-            table.encrypted_measure, keyset_handle, context="measure"
-        )
-
-        option_map = {}
-        options_text = []
-        for opt in table.options:
-            txt = self.crypto.decrypt_string(
-                opt.encrypted_text, keyset_handle, context="option"
+        def _decrypt_ballot_data():
+            measure = self.crypto.decrypt_string(
+                table.encrypted_measure, keyset_handle, context="measure"
             )
-            option_map[opt.id] = txt
-            if not opt.is_write_in:
-                options_text.append(txt)
+
+            option_map = {}
+            options_text = []
+            for opt in table.options:
+                txt = self.crypto.decrypt_string(
+                    opt.encrypted_text, keyset_handle, context="option"
+                )
+                option_map[opt.id] = txt
+                if not opt.is_write_in:
+                    options_text.append(txt)
+            return measure, options_text, option_map
+
+        # Offload decryption to a thread to avoid blocking the event loop
+        measure, options_text, option_map = await to_thread.run_sync(
+            _decrypt_ballot_data
+        )
 
         return Ballot(
             ballot_id=table.id,
@@ -91,27 +109,31 @@ class BallotService:
         self, ballot_create: BallotCreate, owner_id: str | None = None
     ) -> Ballot:
         """Create a new ballot and initialize its SSE client list."""
-        # 1. Generate new keyset
-        keyset_handle = self.crypto.generate_ballot_keyset()
+        # 1. Generate new keyset (CPU bound)
+        keyset_handle = await to_thread.run_sync(self.crypto.generate_ballot_keyset)
 
         # 2. Encrypt metadata
-        # We need a temporary ID for the context during encryption if it's new,
-        # but Tink recommends using the final ID. Since we generate IDs in the repo,
-        # we'll generate it here instead to be safe with Tink context.
         from ..repositories.models import generate_id
 
         ballot_id = generate_id()
 
-        enc_dek = self.crypto.encrypt_ballot_keyset(keyset_handle, ballot_id)
-        enc_measure = self.crypto.encrypt_string(
-            ballot_create.measure, keyset_handle, context="measure"
-        )
-        enc_options = [
-            self.crypto.encrypt_string(opt, keyset_handle, context="option")
-            for opt in ballot_create.options
-        ]
+        def _encrypt_ballot_data():
+            enc_dek = self.crypto.encrypt_ballot_keyset(keyset_handle, ballot_id)
+            enc_measure = self.crypto.encrypt_string(
+                ballot_create.measure, keyset_handle, context="measure"
+            )
+            enc_options = [
+                self.crypto.encrypt_string(opt, keyset_handle, context="option")
+                for opt in ballot_create.options
+            ]
+            return enc_dek, enc_measure, enc_options
 
-        # 3. Save to DB (modified repo method)
+        # Offload encryption to thread
+        enc_dek, enc_measure, enc_options = await to_thread.run_sync(
+            _encrypt_ballot_data
+        )
+
+        # 3. Save to DB
         table = await self.repository.create_ballot_record(
             ballot_id=ballot_id,
             encrypted_measure=enc_measure,
@@ -122,14 +144,8 @@ class BallotService:
             end_time=ballot_create.end_time,
             owner_id=owner_id,
         )
-        # Note: we ignore the generated ID in the repo if we passed one,
-        # but our repo currently generates its own. I should fix that.
 
-        # For now, let's assume the repo uses the ID if provided or we fix the repo.
-        # Let's actually just let the repo handle ID generation but we need it for encryption.
-        # I'll modify the repo to accept an ID.
-
-        self._sse_queues[table.id] = []
+        self.state._sse_queues[table.id] = []
 
         logger.info(
             "ballot.created",
@@ -158,7 +174,7 @@ class BallotService:
                 async with self.redis.lock(lock_name, timeout=10):
                     await self._do_record_vote(ballot_id, vote)
             else:
-                async with self._get_lock(ballot_id):
+                async with self.state.get_lock(ballot_id):
                     await self._do_record_vote(ballot_id, vote)
 
             logger.info(
@@ -167,14 +183,11 @@ class BallotService:
                 is_write_in=vote.is_write_in,
             )
         except Exception:
-            # We log the exception here to ensure visibility, then re-raise
-            # so the controller can handle the user response.
             logger.error("vote.failed", ballot_id=ballot_id, exc_info=True)
             raise
 
     async def _do_record_vote(self, ballot_id: str, vote: Vote) -> None:
         """Inner logic for recording a vote."""
-        # This fetches and decrypts the ballot
         ballot = await self.get_ballot(ballot_id)
         now = datetime.now(timezone.utc)
 
@@ -198,8 +211,13 @@ class BallotService:
             keyset_handle = await self.crypto.get_ballot_keyset(
                 table.id, table.encrypted_dek
             )
-            enc_val = self.crypto.encrypt_string(
-                vote.write_in_value, keyset_handle, context="option"
+
+            # Offload write-in encryption
+            enc_val = await to_thread.run_sync(
+                self.crypto.encrypt_string,
+                vote.write_in_value,
+                keyset_handle,
+                "option",
             )
 
             # Add option and get ID
@@ -216,20 +234,14 @@ class BallotService:
             data = json.dumps([t.model_dump() for t in updated_counts])
             await self.redis.publish(f"ballot:{ballot_id}:updates", data)
 
-        for queue in self._sse_queues.get(ballot_id, []):
+        for queue in self.state._sse_queues.get(ballot_id, []):
             await queue.put(updated_counts)
 
     async def get_vote_counts(self, ballot_id: str) -> list[Tally]:
         """Retrieve current vote counts for a ballot."""
-        # We check if ballot exists and decrypt it to get the option names
         ballot = await self.get_ballot(ballot_id)
 
         tallies_raw = await self.repository.get_tallies(ballot_id)
-        # tallies_raw is list of (option_id, count)
-
-        # We need to ensure all predefined options are included even if 0 votes
-        # And we need to decrypt the option names from the map
-
         counts_dict = {oid: count for oid, count in tallies_raw}
 
         results = []
@@ -242,32 +254,33 @@ class BallotService:
         """Register a new SSE client for a ballot and return its event queue."""
         _ = await self.get_ballot(ballot_id)
         queue: asyncio.Queue[list[Tally]] = asyncio.Queue()
-        if ballot_id not in self._sse_queues:
-            self._sse_queues[ballot_id] = []
-        self._sse_queues[ballot_id].append(queue)
+        if ballot_id not in self.state._sse_queues:
+            self.state._sse_queues[ballot_id] = []
+        self.state._sse_queues[ballot_id].append(queue)
         return queue
 
     async def unregister_sse_client(
         self, ballot_id: str, queue: asyncio.Queue[list[Tally]]
     ):
         """Remove an SSE client's queue from a ballot's notification list."""
-        if ballot_id in self._sse_queues:
+        if ballot_id in self.state._sse_queues:
             try:
-                self._sse_queues[ballot_id].remove(queue)
+                self.state._sse_queues[ballot_id].remove(queue)
             except ValueError:
                 pass
 
-        # Immediate cleanup if the list is now empty
-        if ballot_id in self._sse_queues and not self._sse_queues[ballot_id]:
-            del self._sse_queues[ballot_id]
+        if (
+            ballot_id in self.state._sse_queues
+            and not self.state._sse_queues[ballot_id]
+        ):
+            del self.state._sse_queues[ballot_id]
 
     async def cleanup_stale_metadata(self):
         """
         Identify and remove metadata (locks, queue lists) for expired ballots.
         """
-        # We work on a copy of the keys to avoid "dict changed size during iteration"
-        lock_ids = set(self._locks.keys())
-        queue_ids = set(self._sse_queues.keys())
+        lock_ids = set(self.state._locks.keys())
+        queue_ids = set(self.state._sse_queues.keys())
         all_ids = lock_ids.union(queue_ids)
 
         cleaned_count = 0
@@ -277,25 +290,21 @@ class BallotService:
                 ballot = await self.get_ballot(ballot_id)
                 status, _ = self.get_status(ballot)
 
-                # If the ballot is ended, we can potentially clean it up
                 if status == "ended":
-                    # 1. Handle SSE Queues: only remove if empty
                     if (
-                        ballot_id in self._sse_queues
-                        and not self._sse_queues[ballot_id]
+                        ballot_id in self.state._sse_queues
+                        and not self.state._sse_queues[ballot_id]
                     ):
-                        del self._sse_queues[ballot_id]
+                        del self.state._sse_queues[ballot_id]
                         cleaned_count += 1
 
-                    # 2. Handle Locks
-                    if ballot_id in self._locks:
-                        del self._locks[ballot_id]
+                    if ballot_id in self.state._locks:
+                        del self.state._locks[ballot_id]
                         cleaned_count += 1
 
             except BallotNotFoundError:
-                # Ballot was deleted from DB? Clean up everything.
-                _ = self._sse_queues.pop(ballot_id, None)
-                _ = self._locks.pop(ballot_id, None)
+                _ = self.state._sse_queues.pop(ballot_id, None)
+                _ = self.state._locks.pop(ballot_id, None)
                 cleaned_count += 1
 
         if cleaned_count > 0:
@@ -306,7 +315,6 @@ class BallotService:
     ):
         """
         Listen to Redis Pub/Sub for updates to a specific ballot and push them to the local queue.
-        This allows multiple application workers to share the same update stream.
         """
         if not self.redis:
             return
@@ -321,7 +329,6 @@ class BallotService:
             async for message in pubsub.listen():
                 if message["type"] == "message":
                     data = json.loads(str(message["data"]))
-                    # Parse back into Tally objects
                     tallies = [Tally(**t) for t in data]
                     await queue.put(tallies)
         finally:

@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 # without requiring a full browser environment, making it environment-agnostic.
 
 
-@pytest.mark.asyncio
 async def test_create_ballot_and_vote_functional(server_url: str):
     """Verifies the full lifecycle of a ballot using functional simulation."""
     async with httpx.AsyncClient() as client:
@@ -59,7 +58,6 @@ async def test_create_ballot_and_vote_functional(server_url: str):
         assert "1" in response.text
 
 
-@pytest.mark.asyncio
 async def test_htmx_validation_errors_functional(server_url: str):
     """Verifies that validation errors return HTMX partials as expected."""
     async with httpx.AsyncClient() as client:
@@ -87,7 +85,6 @@ async def test_htmx_validation_errors_functional(server_url: str):
         assert measure_input["value"] == "ab"
 
 
-@pytest.mark.asyncio
 async def test_sse_live_updates_functional(server_url: str):
     """Verifies SSE updates by monitoring the stream while casting a vote."""
     async with httpx.AsyncClient(timeout=10.0) as client:

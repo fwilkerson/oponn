@@ -2,13 +2,19 @@ import os
 import socket
 import threading
 import time
+from typing import AsyncGenerator
 
 import pytest
+import pytest_asyncio
 import uvicorn
-from fastapi.testclient import TestClient
-from src.dependencies import _ballot_service, validate_csrf
+from httpx import ASGITransport, AsyncClient
+from src.dependencies import (
+    _ballot_state_manager,
+    _in_memory_ballot_repo,
+    get_crypto_service,
+    validate_csrf,
+)
 from src.main import app
-from src.repositories.ballot_repository import InMemoryBallotRepository
 
 
 def pytest_assertrepr_compare(op: str, left: object, right: object) -> list[str] | None:
@@ -58,29 +64,30 @@ def get_free_port():
 @pytest.fixture(autouse=True)
 def reset_service():
     """Resets the global service state before each test to ensure isolation."""
-    # Always clear SSE and locks
-    _ballot_service._sse_queues.clear()
-    _ballot_service._locks.clear()
+    # Reset shared State Manager
+    _ballot_state_manager.clear()
 
     # Reset Crypto Cache
-    if _ballot_service.crypto:
-        _ballot_service.crypto._l1_cache.clear()
+    crypto = get_crypto_service()
+    if crypto:
+        crypto._l1_cache.clear()
 
-    # Reset in-memory repo if that's what we are using
-    _ballot_repo = _ballot_service.repository
-    if isinstance(_ballot_repo, InMemoryBallotRepository):
-        _ballot_repo.ballots_db.clear()
-        _ballot_repo.votes_db.clear()
-        _ballot_repo.options_db.clear()
-        _ballot_repo._opt_id_counter = 1
+    # Reset in-memory repo
+    # We access the global singleton repo directly now, which is safer
+    _ballot_repo = _in_memory_ballot_repo
+    _ballot_repo.ballots_db.clear()
+    _ballot_repo.votes_db.clear()
+    _ballot_repo.options_db.clear()
+    _ballot_repo._opt_id_counter = 1
 
 
-@pytest.fixture
-def client():
+@pytest_asyncio.fixture
+async def client() -> AsyncGenerator[AsyncClient, None]:
     # Override CSRF for local TestClient tests
     app.dependency_overrides[validate_csrf] = lambda: None
 
-    with TestClient(app) as c:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
     app.dependency_overrides.clear()
