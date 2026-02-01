@@ -54,6 +54,29 @@ make upgrade       # Apply migrations
 - **`make dev`**: Single worker with hot-reload (Standard Dev).
 - **`make prod`**: Multi-worker Gunicorn (Production Simulation).
 
+## Security & Key Management
+
+Oponn uses column-level encryption to protect sensitive data. In production, a persistent master keyset is required to ensure data can be decrypted across server restarts.
+
+### Generating a Master Keyset
+Use the provided tool to generate a new Tink keyset:
+```bash
+poetry run python tools/generate_keyset.py
+```
+
+### Environment Configuration
+Export the generated JSON keyset as an environment variable or add it to your `.env` file:
+
+```bash
+# .env
+OPONN_MASTER_KEYSET='{"primaryKeyId":...}'
+```
+
+Then run in production:
+```bash
+make prod
+```
+
 ## Development Commands
 
 | Command | Description |

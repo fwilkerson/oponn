@@ -11,6 +11,13 @@ Oponn follows a **Distributed Server-Informed UI** pattern. The server is the so
 
 ## 2. Core Technical Constraints
 
+### Async-First Execution & Loop Locality
+Oponn is an **async-native** application. To avoid `RuntimeError: Task attached to a different loop` and database connection corruption:
+
+- **Strict Async Preference**: All database-touching and network-bound code MUST be `async def`.
+- **Loop-Aware Singletons**: Infrastructure dependencies (Database Engine, Redis, Repositories) MUST NOT be initialized at the module level. They must be lazily initialized and cached per event loop (using `asyncio.get_running_loop()`) via factory functions in `src/dependencies.py`.
+- **Thread Delegation (The "Pure Work" Rule)**: Use `anyio.to_thread.run_sync` only for CPU-bound or blocking synchronous libraries. NEVER pass async-bound objects (Sessions, Redis clients, Services) to a thread. Pass only primitive data types (strings, dicts, ints) and return the same.
+
 ### Concurrency & Consistency
 - **Distributed Locking**: `BallotService` uses **Redis-backed distributed locks** (`self.redis.lock`) during the `record_vote` process. This ensures that the "Check-then-Act" sequence (validation -> persistence -> broadcast) is linear across the entire cluster.
 - **Graceful Fallback**: In `development` or `testing` modes, the service falls back to a local `asyncio.Lock` if Redis is missing.
@@ -19,25 +26,15 @@ Oponn follows a **Distributed Server-Informed UI** pattern. The server is the so
 - **Redis Pub/Sub**: Live updates are broadcast to Redis channels (`ballot:{id}:updates`).
 - **Anyio Task Groups**: The SSE route (`src/routes/sse.py`) uses `anyio.create_task_group` to run a background listener that bridges Redis broadcasts to the client's local SSE stream.
 
-### Lifecycle & Memory Management
-- **Background Reaper**: A lifespan task in `src/main.py` wakes up every 60 seconds to prune stale in-memory metadata (locks, inactive queue lists) from `BallotService`.
-- **Session Management**: Background tasks must create their own database sessions using `SessionLocal` via an `async with` block, as they lack request-scope dependency injection.
+## 4. Development Tooling (`manage.py` & `Makefile`)
+The project uses `manage.py` as the primary CLI and `Makefile` as a shortcut for common workflows.
 
-## 3. Production Hardening
-Oponn follows a **"Fail-Fast"** philosophy for production safety.
-
-- **Strict Dependencies**: If `OPONN_ENV=production`, the app will raise a `RuntimeError` on startup if `DATABASE_URL` or `REDIS_URL` are missing.
-- **CSRF Security**:
-    - `GET` requests are exempt (read-only).
-    - `POST` requests require a token.
-    - In production, `secure=True` is enforced for cookies, and the `OPONN_SKIP_CSRF` backdoor is disabled.
-
-## 4. Development Tooling (`dev.py` & `Makefile`)
-- `make dev`: Standard development with hot-reload and permissive defaults.
+- `make dev`: Launches the development server with hot-reload.
 - `make services-up`: Launches Postgres 16 and Redis 7 via Docker Compose.
-- `make upgrade`: Applies Alembic migrations to the active database.
-- `make prod`: Runs the app via **Gunicorn** with multiple workers to simulate a production environment.
-- `make format-ui`: Formats templates (djlint), CSS (cssbeautify), and JS (jsbeautifier).
+- `make migrate`: Applies Alembic migrations (alias for `python manage.py db upgrade`).
+- `make test`: Executes the full suite with `pytest`.
+- `make simulate`: Runs a high-concurrency voting simulation to verify distributed locks and SSE.
+- `make prod`: Runs the app via **Gunicorn** with multiple workers.
 
 ## 5. Testing Strategy
 - **Functional Simulation**: Tests in `tests/test_e2e.py` simulate HTMX requests and verify SSE streams.

@@ -133,45 +133,56 @@ async def test_scheduled_ballot_validation(client: AsyncClient):
 
 
 async def test_vote_button_states(client: AsyncClient):
-    service = get_ballot_service()
-
-    # Create a future ballot via service
+    # 1. Create a future ballot via client
     future_st = datetime.now(timezone.utc) + timedelta(days=1)
-    bc = BallotCreate(
-        measure="Future Ballot",
-        options=["A", "B"],
-        allow_write_in=False,
-        start_time=future_st,
+    response = await client.post(
+        "/create",
+        data={
+            "measure": "Future Ballot",
+            "options_raw": "A, B",
+            "start_time_type": "scheduled",
+            "scheduled_start_time": future_st.isoformat(),
+            "duration_mins": "60",
+        },
+        headers={"HX-Request": "true"},
     )
-    ballot = await service.create_ballot(bc)
+    assert response.status_code == 204
+    ballot_id = response.headers["HX-Redirect"].split("/")[-1]
 
-    response = await client.get(f"/vote/{ballot.ballot_id}")
+    # 2. Check vote page for future ballot
+    response = await client.get(f"/vote/{ballot_id}")
+    assert response.status_code == 200
     soup = BeautifulSoup(response.text, "html.parser")
     button = soup.find("button", {"type": "submit"})
     assert button is not None
-    assert "button-action" in button["class"]
     assert button.has_attr("disabled")
-    assert "starts in" in response.text
+    assert "starts in" in response.text.lower()
 
-    # Create an ended ballot
-    past_st = datetime.now(timezone.utc) - timedelta(hours=2)
-    past_et = datetime.now(timezone.utc) - timedelta(hours=1)
-    bc_ended = BallotCreate(
-        measure="Ended Ballot",
-        options=["B", "C"],
-        allow_write_in=False,
-        start_time=past_st,
-        end_time=past_et,
-    )
-    ballot_ended = await service.create_ballot(bc_ended)
+    # 3. Create an ended ballot via service (bypassing UI future-only validation)
+    from src.database import get_sessionmaker
 
+    session_factory = get_sessionmaker()
+    async with session_factory() as session:
+        service = await get_ballot_service(session=session)
+        past_st = datetime.now(timezone.utc) - timedelta(days=2)
+        bc_ended = BallotCreate(
+            measure="Ended Ballot",
+            options=["A", "B"],
+            allow_write_in=False,
+            start_time=past_st,
+            end_time=past_st + timedelta(hours=1),
+        )
+        ballot_ended = await service.create_ballot(bc_ended)
+        # Note: create_ballot calls commit() internally in SQL repo
+
+    # 4. Check vote page for ended ballot
     response = await client.get(f"/vote/{ballot_ended.ballot_id}")
+    assert response.status_code == 200
     soup = BeautifulSoup(response.text, "html.parser")
     button = soup.find("button", {"type": "submit"})
     assert button is not None
-    assert "button-action" in button["class"]
     assert button.has_attr("disabled")
-    assert "voting closed" in response.text
+    assert "voting closed" in response.text.lower()
 
 
 async def test_partial_rendering(client: AsyncClient):

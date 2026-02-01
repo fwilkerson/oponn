@@ -24,8 +24,8 @@ dependencies = [
     "tink (>=1.10.0,<2.0.0)",
 ]
 
-[tool.poetry]
-package-mode = false
+[tool.poetry.scripts]
+oponn = "manage:app"
 
 [build-system]
 

@@ -1,44 +1,40 @@
-.PHONY: help run test lint format typecheck
+.PHONY: help dev prod services-up services-down services-purge migrate upgrade test lint check keyset simulate
 .DEFAULT_GOAL := help
 
-help:
+# Helper to run the CLI tool
+CLI := poetry run python manage.py
+
+help: ## Display this help screen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+prod: ## Start production server
+	$(CLI) prod
 
-dev: ## Run in development mode (permissive, hot-reload)
-	poetry run ./dev.py dev
+services-up: ## Start infrastructure
+	$(CLI) infra up
 
-prod: ## Run in production mode (Gunicorn, strict dependencies)
-	poetry run ./dev.py prod
+services-down: ## Stop infrastructure
+	$(CLI) infra down
 
-services-up: ## Start Postgres and Redis
-	poetry run ./dev.py services start
+services-purge: ## Wipe DB and Redis
+	$(CLI) infra purge
 
-services-down: ## Stop Postgres and Redis
-	poetry run ./dev.py services stop
+migrate: ## Generate migration (e.g. make migrate MSG="add users")
+	$(CLI) db migrate --message "$(MSG)"
 
-migrate: ## Generate new DB migration
-	poetry run ./dev.py migrate
+upgrade: ## Apply migrations
+	$(CLI) db upgrade
 
-upgrade: ## Apply DB migrations
-	poetry run ./dev.py upgrade
+keyset: ## Generate master key
+	$(CLI) keyset
 
-test: ## Run test
-	unset DATABASE_URL && poetry run ./dev.py test -vv --ignore=tests/test_sql_repo.py
+simulate: ## Simulate votes: make simulate ID=ballot_id VOTES=10
+	$(CLI) simulate $(ID) --votes $(VOTES)
 
-test-sql: ## Run PostgreSQL integration tests
-	poetry run ./dev.py test tests/test_sql_repo.py
+test: ## Run tests (args via ARGS="...")
+	$(CLI) test $(ARGS)
 
-lint: ## Automatically fix linting issues with Ruff
-	poetry run ./dev.py lint
+lint: ## Lint and format
+	$(CLI) lint
 
-lint-ui: ## Check HTML/CSS/JS with djlint
-	poetry run ./dev.py lint-ui
-
-format: ## Automatically format files with Ruff
-	poetry run ./dev.py format
-
-format-ui: ## Automatically format HTML/CSS/JS with djlint
-	poetry run ./dev.py format-ui
-
-typecheck: ## Check types with basedpyright
-	poetry run ./dev.py typecheck
+check: ## Full QA suite
+	$(CLI) check

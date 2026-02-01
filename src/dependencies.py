@@ -1,3 +1,4 @@
+import asyncio
 import os
 from collections.abc import AsyncGenerator
 from typing import Annotated
@@ -6,7 +7,7 @@ from fastapi import Depends, Form, Header, HTTPException, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .database import SessionLocal
+from .database import get_sessionmaker
 from .repositories.ballot_repository import (
     BallotRepository,
     InMemoryBallotRepository,
@@ -32,31 +33,53 @@ CSRF_COOKIE_NAME = "oponn_csrf_token"
 OPONN_ENV = os.getenv("OPONN_ENV", "development").lower()
 REDIS_URL = os.getenv("REDIS_URL")
 
-# Initialize Redis client as a singleton
-_redis_client: aioredis.Redis | None = (
-    aioredis.from_url(REDIS_URL, decode_responses=False) if REDIS_URL else None
-)
-
-# Initialize other singletons
-_crypto_service: CryptoService | None = None
-_ballot_state_manager = BallotStateManager()
-
-# In-memory repo singletons
-_in_memory_ballot_repo = InMemoryBallotRepository()
-_in_memory_user_repo = InMemoryUserRepository()
+# Singletons that MIGHT capture loop state (initialized lazily per loop)
+_redis_clients: dict[asyncio.AbstractEventLoop, aioredis.Redis] = {}
+_crypto_services: dict[asyncio.AbstractEventLoop, CryptoService] = {}
+_ballot_state_managers: dict[asyncio.AbstractEventLoop, BallotStateManager] = {}
+_in_memory_ballot_repos: dict[asyncio.AbstractEventLoop, InMemoryBallotRepository] = {}
+_in_memory_user_repos: dict[asyncio.AbstractEventLoop, InMemoryUserRepository] = {}
 
 
-def get_crypto_service() -> CryptoService:
-    global _crypto_service
-    ks = os.getenv("OPONN_MASTER_KEYSET")
-    if _crypto_service is None:
-        _crypto_service = CryptoService(
-            master_keyset_json=ks, redis_client=_redis_client
+async def get_redis_client() -> aioredis.Redis | None:
+    """Returns a singleton Redis client per loop, initialized on first use."""
+    if not REDIS_URL:
+        return None
+    loop = asyncio.get_running_loop()
+    if loop not in _redis_clients:
+        _redis_clients[loop] = aioredis.from_url(REDIS_URL, decode_responses=False)
+    return _redis_clients[loop]
+
+
+async def get_crypto_service() -> CryptoService:
+    loop = asyncio.get_running_loop()
+    if loop not in _crypto_services:
+        ks = os.getenv("OPONN_MASTER_KEYSET")
+        _crypto_services[loop] = CryptoService(
+            master_keyset_json=ks, redis_client=await get_redis_client()
         )
-    elif ks:
-        # Update existing service if keyset changed (mostly for tests)
-        _crypto_service.__init__(master_keyset_json=ks, redis_client=_redis_client)
-    return _crypto_service
+    return _crypto_services[loop]
+
+
+async def get_ballot_state_manager() -> BallotStateManager:
+    loop = asyncio.get_running_loop()
+    if loop not in _ballot_state_managers:
+        _ballot_state_managers[loop] = BallotStateManager()
+    return _ballot_state_managers[loop]
+
+
+async def get_in_memory_ballot_repo() -> InMemoryBallotRepository:
+    loop = asyncio.get_running_loop()
+    if loop not in _in_memory_ballot_repos:
+        _in_memory_ballot_repos[loop] = InMemoryBallotRepository()
+    return _in_memory_ballot_repos[loop]
+
+
+async def get_in_memory_user_repo() -> InMemoryUserRepository:
+    loop = asyncio.get_running_loop()
+    if loop not in _in_memory_user_repos:
+        _in_memory_user_repos[loop] = InMemoryUserRepository()
+    return _in_memory_user_repos[loop]
 
 
 # Dependency Validation
@@ -65,18 +88,22 @@ if OPONN_ENV == "production":
         raise RuntimeError("DATABASE_URL must be set in production mode")
     if not REDIS_URL:
         raise RuntimeError("REDIS_URL must be set in production mode")
+    if not os.getenv("OPONN_MASTER_KEYSET"):
+        raise RuntimeError("OPONN_MASTER_KEYSET must be set in production mode")
 
 
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
     """Dependency for getting a DB session."""
-    if SessionLocal is None:
+    if os.getenv("DATABASE_URL") is None:
         yield None
         return
-    async with SessionLocal() as session:
+
+    session_factory = get_sessionmaker()
+    async with session_factory() as session:
         yield session
 
 
-def get_ballot_service(
+async def get_ballot_service(
     session: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> BallotService:
     """
@@ -88,17 +115,17 @@ def get_ballot_service(
     if os.getenv("DATABASE_URL") and session:
         repo = SqlBallotRepository(session)
     else:
-        repo = _in_memory_ballot_repo
+        repo = await get_in_memory_ballot_repo()
 
     return BallotService(
         repository=repo,
-        crypto=get_crypto_service(),
-        state_manager=_ballot_state_manager,
-        redis_client=_redis_client,
+        crypto=await get_crypto_service(),
+        state_manager=await get_ballot_state_manager(),
+        redis_client=await get_redis_client(),
     )
 
 
-def get_auth_service(
+async def get_auth_service(
     session: Annotated[AsyncSession | None, Depends(get_db)] = None,
 ) -> AuthService:
     """
@@ -108,7 +135,7 @@ def get_auth_service(
     if os.getenv("DATABASE_URL") and session:
         repo = SqlUserRepository(session)
     else:
-        repo = _in_memory_user_repo
+        repo = await get_in_memory_user_repo()
 
     return AuthService(repository=repo)
 

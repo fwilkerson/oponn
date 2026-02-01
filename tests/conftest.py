@@ -9,11 +9,12 @@ import pytest_asyncio
 import uvicorn
 from httpx import ASGITransport, AsyncClient
 from src.dependencies import (
-    _ballot_state_manager,
-    _in_memory_ballot_repo,
+    get_ballot_state_manager,
+    get_in_memory_ballot_repo,
     get_crypto_service,
     validate_csrf,
 )
+from src.database import get_engine
 from src.main import app
 
 
@@ -61,24 +62,32 @@ def get_free_port():
     return port
 
 
-@pytest.fixture(autouse=True)
-def reset_service():
+@pytest_asyncio.fixture(autouse=True)
+async def reset_service():
     """Resets the global service state before each test to ensure isolation."""
     # Reset shared State Manager
-    _ballot_state_manager.clear()
+    state = await get_ballot_state_manager()
+    state.clear()
 
     # Reset Crypto Cache
-    crypto = get_crypto_service()
-    if crypto:
-        crypto._l1_cache.clear()
+    crypto = await get_crypto_service()
+    crypto._l1_cache.clear()
 
     # Reset in-memory repo
-    # We access the global singleton repo directly now, which is safer
-    _ballot_repo = _in_memory_ballot_repo
-    _ballot_repo.ballots_db.clear()
-    _ballot_repo.votes_db.clear()
-    _ballot_repo.options_db.clear()
-    _ballot_repo._opt_id_counter = 1
+    repo = await get_in_memory_ballot_repo()
+    repo.ballots_db.clear()
+    repo.votes_db.clear()
+    repo.options_db.clear()
+    repo._opt_id_counter = 1
+
+    # Reset SQL Database if using it
+    if os.getenv("DATABASE_URL"):
+        from sqlalchemy import text
+
+        engine = get_engine()
+        async with engine.begin() as conn:
+            # Disable foreign key checks temporarily to truncate all tables
+            await conn.execute(text("TRUNCATE ballots, options, votes, users CASCADE"))
 
 
 @pytest_asyncio.fixture

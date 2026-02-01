@@ -1,10 +1,11 @@
 import asyncio
+import os
 import secrets
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request
 from starlette.staticfiles import StaticFiles
 
 from .dependencies import CSRF_COOKIE_NAME, get_ballot_service
@@ -29,69 +30,88 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging()
     logger.info("lifecycle.startup", msg="Application starting up")
 
-    reaper_task = asyncio.create_task(background_reaper())
+    reaper_task = None
+    if os.getenv("OPONN_ENV") != "testing":
+        reaper_task = asyncio.create_task(background_reaper())
+
     yield
     # Shutdown: Stop background tasks
     logger.info("lifecycle.shutdown", msg="Application shutting down")
-    __ = reaper_task.cancel()
-    try:
-        await reaper_task
-    except asyncio.CancelledError:
-        pass
+    if reaper_task:
+        reaper_task.cancel()
+        try:
+            await reaper_task
+        except asyncio.CancelledError:
+            pass
 
 
 async def background_reaper():
     """Periodically clean up stale ballot metadata."""
-    from .database import SessionLocal
+    from .database import get_sessionmaker
 
     while True:
         try:
             await asyncio.sleep(60)  # Reap every 60 seconds
 
             # If we are using SQL, we need to provide a session
-            if SessionLocal is not None:
-                async with SessionLocal() as session:
-                    service = get_ballot_service(session=session)
+            if os.getenv("DATABASE_URL"):
+                session_factory = get_sessionmaker()
+                async with session_factory() as session:
+                    service = await get_ballot_service(session=session)
                     await service.cleanup_stale_metadata()
             else:
                 # In-memory mode
-                service = get_ballot_service(session=None)
+                service = await get_ballot_service(session=None)
                 await service.cleanup_stale_metadata()
 
         except Exception as e:
             logger.error("background_reaper.error", error=str(e))
 
 
+# Standard middleware for CSRF cookie management
+class CSRFMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive)
+
+        # Get existing token or generate a new one
+        token = request.cookies.get(CSRF_COOKIE_NAME)
+        if not token:
+            token = secrets.token_urlsafe(32)
+
+        # Make token available to the request state
+        request.state.csrf_token = token
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                # Ensure the CSRF cookie is set if not already present
+                if CSRF_COOKIE_NAME not in request.cookies:
+                    from .dependencies import OPONN_ENV
+
+                    # We need to add the Set-Cookie header
+                    headers = message.get("headers", [])
+                    cookie_val = (
+                        f"{CSRF_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Path=/"
+                    )
+                    if OPONN_ENV == "production":
+                        cookie_val += "; Secure"
+
+                    headers.append((b"set-cookie", cookie_val.encode()))
+                    message["headers"] = headers
+
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 app = FastAPI(title="Oponn Voting Service", lifespan=lifespan)
-
-
-@app.middleware("http")
-async def csrf_middleware(
-    request: Request, call_next: Callable[[Request], Awaitable[Response]]
-) -> Response:
-    # Get existing token or generate a new one
-    token = request.cookies.get(CSRF_COOKIE_NAME)
-    if not token:
-        token = secrets.token_urlsafe(32)
-
-    # Make token available to the request state for dependencies and templates
-    request.state.csrf_token = token
-
-    response = await call_next(request)
-
-    # Ensure the CSRF cookie is set if not already present
-    if CSRF_COOKIE_NAME not in request.cookies:
-        from .dependencies import OPONN_ENV
-
-        response.set_cookie(
-            CSRF_COOKIE_NAME,
-            token,
-            httponly=True,
-            samesite="lax",
-            secure=OPONN_ENV == "production",
-        )
-
-    return response
+app.add_middleware(CSRFMiddleware)
 
 
 # Infrastructure setup

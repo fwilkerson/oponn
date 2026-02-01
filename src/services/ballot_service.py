@@ -2,9 +2,8 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
-from anyio import to_thread
-from redis import asyncio as aioredis
 import structlog
+from redis import asyncio as aioredis
 
 from ..models.ballot_models import Ballot, BallotCreate, Tally, Vote
 from ..models.exceptions import (
@@ -13,8 +12,8 @@ from ..models.exceptions import (
     VotingNotOpenError,
 )
 from ..repositories.ballot_repository import BallotRepository
-from .crypto_service import CryptoService
 from ..repositories.models import BallotTable
+from .crypto_service import CryptoService
 
 logger = structlog.stdlib.get_logger()
 
@@ -73,26 +72,19 @@ class BallotService:
             table.id, table.encrypted_dek
         )
 
-        def _decrypt_ballot_data():
-            measure = self.crypto.decrypt_string(
-                table.encrypted_measure, keyset_handle, context="measure"
-            )
-
-            option_map = {}
-            options_text = []
-            for opt in table.options:
-                txt = self.crypto.decrypt_string(
-                    opt.encrypted_text, keyset_handle, context="option"
-                )
-                option_map[opt.id] = txt
-                if not opt.is_write_in:
-                    options_text.append(txt)
-            return measure, options_text, option_map
-
-        # Offload decryption to a thread to avoid blocking the event loop
-        measure, options_text, option_map = await to_thread.run_sync(
-            _decrypt_ballot_data
+        measure = self.crypto.decrypt_string(
+            table.encrypted_measure, keyset_handle, context="measure"
         )
+
+        option_map = {}
+        options_text = []
+        for opt in table.options:
+            txt = self.crypto.decrypt_string(
+                opt.encrypted_text, keyset_handle, context="option"
+            )
+            option_map[opt.id] = txt
+            if not opt.is_write_in:
+                options_text.append(txt)
 
         return Ballot(
             ballot_id=table.id,
@@ -109,29 +101,22 @@ class BallotService:
         self, ballot_create: BallotCreate, owner_id: str | None = None
     ) -> Ballot:
         """Create a new ballot and initialize its SSE client list."""
-        # 1. Generate new keyset (CPU bound)
-        keyset_handle = await to_thread.run_sync(self.crypto.generate_ballot_keyset)
+        # 1. Generate new keyset
+        keyset_handle = self.crypto.generate_ballot_keyset()
 
         # 2. Encrypt metadata
         from ..repositories.models import generate_id
 
         ballot_id = generate_id()
 
-        def _encrypt_ballot_data():
-            enc_dek = self.crypto.encrypt_ballot_keyset(keyset_handle, ballot_id)
-            enc_measure = self.crypto.encrypt_string(
-                ballot_create.measure, keyset_handle, context="measure"
-            )
-            enc_options = [
-                self.crypto.encrypt_string(opt, keyset_handle, context="option")
-                for opt in ballot_create.options
-            ]
-            return enc_dek, enc_measure, enc_options
-
-        # Offload encryption to thread
-        enc_dek, enc_measure, enc_options = await to_thread.run_sync(
-            _encrypt_ballot_data
+        enc_dek = self.crypto.encrypt_ballot_keyset(keyset_handle, ballot_id)
+        enc_measure = self.crypto.encrypt_string(
+            ballot_create.measure, keyset_handle, context="measure"
         )
+        enc_options = [
+            self.crypto.encrypt_string(opt, keyset_handle, context="option")
+            for opt in ballot_create.options
+        ]
 
         # 3. Save to DB
         table = await self.repository.create_ballot_record(
@@ -212,9 +197,8 @@ class BallotService:
                 table.id, table.encrypted_dek
             )
 
-            # Offload write-in encryption
-            enc_val = await to_thread.run_sync(
-                self.crypto.encrypt_string,
+            # Encrypt write-in
+            enc_val = self.crypto.encrypt_string(
                 vote.write_in_value,
                 keyset_handle,
                 "option",
@@ -333,7 +317,7 @@ class BallotService:
                     await queue.put(tallies)
         finally:
             await pubsub.unsubscribe(channel)
-            await pubsub.close()
+            await pubsub.aclose()
             logger.debug("sse.redis_unsubscribe", ballot_id=ballot_id)
 
     @staticmethod
