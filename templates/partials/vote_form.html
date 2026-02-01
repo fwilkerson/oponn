@@ -17,19 +17,28 @@
             <input type="hidden" name="X-CSRF-Token" value="{{ csrf_token }}" />
             {% if error %}<div class="alert-error">{{ error }}</div>{% endif %}
             <div class="radio-group">
-                {% for option in ballot.options %}
-                    <div class="radio-item">
-                        <label class="radio-label {% if field_errors and field_errors.option %}invalid{% endif %}">
-                            <input type="radio" name="option" value="{{ option }}" required />
-                            <span style="font-size: 0.9rem;">{{ option }}</span>
-                        </label>
-                        {% if field_errors and field_errors.option %}<div class="field-error-msg">{{ field_errors.option }}</div>{% endif %}
-                    </div>
+                {% for oid, text in ballot.option_map.items() %}
+                    {# Only show predefined options in the main list, not write-ins added by others #}
+                    {# Actually, standard UI shows all options. But Oponn logic separates them. #}
+                    {% if text in ballot.options %}
+                        <div class="radio-item">
+                            <label class="radio-label {% if field_errors and field_errors.option_id %}invalid{% endif %}">
+                                <input type="radio" name="option_id" value="{{ oid }}" required />
+                                <span style="font-size: 0.9rem;">{{ text }}</span>
+                            </label>
+                            {% if field_errors and field_errors.option_id %}
+                                <div class="field-error-msg">{{ field_errors.option_id }}</div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
                 {% endfor %}
                 {% if ballot.allow_write_in %}
                     <div class="radio-item">
-                        <label class="radio-label {% if field_errors and (field_errors.option or field_errors.write_in_value) %}invalid{% endif %}">
-                            <input type="radio" name="option" value="__write_in__" id="write-in-radio" />
+                        <label class="radio-label {% if field_errors and (field_errors.option_id or field_errors.write_in_value) %}invalid{% endif %}">
+                            <input type="radio"
+                                   name="option_id"
+                                   value="__write_in__"
+                                   id="write-in-radio" />
                             <span style="display: flex;
                                          gap: 0.5rem;
                                          width: 100%;
@@ -52,7 +61,9 @@
                                        onfocus="document.getElementById('write-in-radio').checked = true" />
                             </span>
                         </label>
-                        {% if field_errors and field_errors.option %}<div class="field-error-msg">{{ field_errors.option }}</div>{% endif %}
+                        {% if field_errors and field_errors.option_id %}
+                            <div class="field-error-msg">{{ field_errors.option_id }}</div>
+                        {% endif %}
                         {% if field_errors and field_errors.write_in_value %}
                             <div class="field-error-msg">{{ field_errors.write_in_value }}</div>
                         {% endif %}

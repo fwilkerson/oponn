@@ -169,7 +169,7 @@ async def process_vote(
     ballot_id: str,
     service: Annotated[BallotService, Depends(get_ballot_service)],
     _: Annotated[None, Depends(validate_csrf)],
-    option: Annotated[str, Form()] = "",
+    option_id: Annotated[str, Form()] = "",
     write_in_value: Annotated[str | None, Form()] = None,
 ):
     if request.cookies.get(f"voted_{ballot_id}"):
@@ -182,7 +182,7 @@ async def process_vote(
 
     try:
         # 1. Load the raw form data into our VoteForm model
-        form_data = VoteForm(option=option, write_in_value=write_in_value)
+        form_data = VoteForm(option_id=option_id, write_in_value=write_in_value)
         # 2. Convert and validate to our core Vote model
         vote = form_data.to_vote()
 
@@ -192,10 +192,14 @@ async def process_vote(
 
         if isinstance(e, ValidationError):
             error_msg, field_errors = format_pydantic_errors(
-                e, field_mapping={"option": "write_in_value"}
+                e,
+                field_mapping={
+                    "option_id": "option_id",
+                    "write_in_value": "write_in_value",
+                },
             )
             context.update({"error": error_msg, "field_errors": field_errors})
-        elif isinstance(e, ValueError) and option == "__write_in__":
+        elif isinstance(e, ValueError) and option_id == "__write_in__":
             context["field_errors"] = {"write_in_value": str(e)}
         else:
             context["error"] = str(e)

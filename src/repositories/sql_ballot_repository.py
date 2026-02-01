@@ -1,10 +1,10 @@
+from datetime import datetime
 from typing import override
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..models.ballot_models import Ballot, BallotCreate, Tally
 from .ballot_repository import BallotRepository
 from .models import BallotTable, OptionTable, VoteTable
 
@@ -20,109 +20,81 @@ class SqlBallotRepository(BallotRepository):
         self.session = session
 
     @override
-    async def list_all(self) -> list[Ballot]:
+    async def list_all(self) -> list[BallotTable]:
         stmt = select(BallotTable).options(selectinload(BallotTable.options))
         result = await self.session.execute(stmt)
-        ballots = result.scalars().all()
-        return [
-            Ballot(
-                ballot_id=b.id,
-                owner_id=b.owner_id,
-                measure=b.measure,
-                options=[opt.text for opt in b.options],
-                allow_write_in=b.allow_write_in,
-                start_time=b.start_time,
-                end_time=b.end_time,
-            )
-            for b in ballots
-        ]
+        return list(result.scalars().all())
 
     @override
-    async def get_by_id(self, ballot_id: str) -> Ballot | None:
+    async def get_by_id(self, ballot_id: str) -> BallotTable | None:
         stmt = (
             select(BallotTable)
             .where(BallotTable.id == ballot_id)
             .options(selectinload(BallotTable.options))
         )
         result = await self.session.execute(stmt)
-        b = result.scalar_one_or_none()
-        if not b:
-            return None
-        return Ballot(
-            ballot_id=b.id,
-            owner_id=b.owner_id,
-            measure=b.measure,
-            options=[opt.text for opt in b.options],
-            allow_write_in=b.allow_write_in,
-            start_time=b.start_time,
-            end_time=b.end_time,
-        )
+        return result.scalar_one_or_none()
 
     @override
-    async def create(
-        self, ballot_create: BallotCreate, owner_id: str | None = None
-    ) -> Ballot:
+    async def create_ballot_record(
+        self,
+        ballot_id: str,
+        encrypted_measure: str,
+        encrypted_dek: str,
+        options: list[str],  # These are already encrypted
+        allow_write_in: bool,
+        start_time: datetime | None,
+        end_time: datetime | None,
+        owner_id: str | None = None,
+    ) -> BallotTable:
         ballot = BallotTable(
+            id=ballot_id,
             owner_id=owner_id,
-            measure=ballot_create.measure,
-            allow_write_in=ballot_create.allow_write_in,
-            start_time=ballot_create.start_time,
-            end_time=ballot_create.end_time,
+            encrypted_measure=encrypted_measure,
+            encrypted_dek=encrypted_dek,
+            allow_write_in=allow_write_in,
+            start_time=start_time,
+            end_time=end_time,
         )
         self.session.add(ballot)
-        await self.session.flush()  # Get ballot.id
+        await self.session.flush()
 
-        for option_text in ballot_create.options:
-            option = OptionTable(ballot_id=ballot.id, text=option_text)
+        for enc_opt in options:
+            option = OptionTable(ballot_id=ballot.id, encrypted_text=enc_opt)
             self.session.add(option)
 
         await self.session.commit()
         await self.session.refresh(ballot)
 
-        # Re-fetch with options
+        # Fetch with options loaded
         res = await self.get_by_id(ballot.id)
-        if res is None:
+        if not res:
             raise RuntimeError("Failed to re-fetch created ballot")
         return res
 
     @override
-    async def add_vote(self, ballot_id: str, option: str) -> None:
-        vote = VoteTable(ballot_id=ballot_id, option_text=option)
+    async def add_vote(self, ballot_id: str, option_id: int) -> None:
+        vote = VoteTable(ballot_id=ballot_id, option_id=option_id)
         self.session.add(vote)
         await self.session.commit()
 
     @override
-    async def get_tallies(self, ballot_id: str) -> list[Tally]:
-        # 1. Get predefined options
-        ballot_stmt = (
-            select(BallotTable)
-            .where(BallotTable.id == ballot_id)
-            .options(selectinload(BallotTable.options))
+    async def add_write_in_option(self, ballot_id: str, encrypted_text: str) -> int:
+        """Adds a new write-in option and returns its ID."""
+        option = OptionTable(
+            ballot_id=ballot_id, encrypted_text=encrypted_text, is_write_in=True
         )
-        result = await self.session.execute(ballot_stmt)
-        ballot = result.scalar_one_or_none()
-        if not ballot:
-            return []
+        self.session.add(option)
+        await self.session.flush()
+        return option.id
 
-        # 2. Get vote counts
-        vote_stmt = (
-            select(VoteTable.option_text, func.count(VoteTable.id))
+    @override
+    async def get_tallies(self, ballot_id: str) -> list[tuple[int, int]]:
+        """Returns a list of (option_id, count)."""
+        stmt = (
+            select(VoteTable.option_id, func.count(VoteTable.id))
             .where(VoteTable.ballot_id == ballot_id)
-            .group_by(VoteTable.option_text)
+            .group_by(VoteTable.option_id)
         )
-        vote_result = await self.session.execute(vote_stmt)
-        vote_counts = {str(text): int(count) for text, count in vote_result.all()}
-
-        # 3. Build tallies
-        results_map: dict[str, Tally] = {
-            opt.text: Tally(option=opt.text, count=vote_counts.get(opt.text, 0))
-            for opt in ballot.options
-        }
-
-        # Add write-ins
-        if bool(ballot.allow_write_in):
-            for option_text, count in vote_counts.items():
-                if option_text not in results_map:
-                    results_map[option_text] = Tally(option=option_text, count=count)
-
-        return list(results_map.values())
+        result = await self.session.execute(stmt)
+        return [(int(row[0]), int(row[1])) for row in result.all()]

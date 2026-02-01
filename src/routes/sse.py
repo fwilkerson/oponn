@@ -20,7 +20,7 @@ async def get_ballot_live_results(
         queue = await service.register_sse_client(ballot_id)
         template = cast(
             Template,
-            templates.env.get_template("partials/vote_results.html"),  # pyright: ignore[reportUnknownMemberType]
+            templates.env.get_template("partials/vote_results.html"),
         )
 
         try:

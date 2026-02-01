@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from typing import cast
 
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
@@ -179,19 +178,25 @@ class BallotCreateForm(BaseModel):
 class Ballot(BallotBase):
     ballot_id: str
     owner_id: str | None = None
+    # Map of option_id -> option_text (decrypted)
+    option_map: dict[int, str] = Field(default_factory=dict)
 
 
 class Vote(BaseModel):
-    option: str = Field(..., min_length=1, max_length=64)
+    option_id: int | None = None  # Reference to existing option
+    write_in_value: str | None = Field(
+        default=None, max_length=64
+    )  # Raw value for write-in
     is_write_in: bool = False
 
-    @field_validator("option")
+    @field_validator("write_in_value")
     @classmethod
-    def validate_option_text(cls, v: str) -> str:
-        if len(v) < 1:
-            raise ValueError("at least 1 character")
-        if len(v) > 64:
-            raise ValueError("at most 64 characters")
+    def validate_write_in_text(cls, v: str | None) -> str | None:
+        if v is not None:
+            if len(v) < 1:
+                raise ValueError("at least 1 character")
+            if len(v) > 64:
+                raise ValueError("at most 64 characters")
         return v
 
 
@@ -201,22 +206,25 @@ class VoteForm(BaseModel):
     Handles BeautifulSoup sanitization and conditional write-in validation.
     """
 
-    option: str
+    option_id: str  # Comes as a string from the radio button or "__write_in__"
     write_in_value: str | None = None
 
     def to_vote(self) -> Vote:
         """Converts the form data into the core Vote domain model."""
-        is_write_in = self.option == "__write_in__"
-        vote_option = self.write_in_value if is_write_in else self.option
+        is_write_in = self.option_id == "__write_in__"
 
         if is_write_in:
-            if not vote_option:
+            if not self.write_in_value:
                 raise ValueError("Write-in value required")
-
             # Basic sanitization
-            vote_option = sanitize_html(vote_option)
-
-        return Vote(option=cast(str, vote_option), is_write_in=is_write_in)
+            val = sanitize_html(self.write_in_value)
+            return Vote(write_in_value=val, is_write_in=True)
+        else:
+            try:
+                oid = int(self.option_id)
+            except ValueError:
+                raise ValueError("Invalid option selected")
+            return Vote(option_id=oid, is_write_in=False)
 
 
 class Tally(BaseModel):

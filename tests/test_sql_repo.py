@@ -1,9 +1,10 @@
 import pytest
 import pytest_asyncio
+import secrets
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from src.models.ballot_models import BallotCreate
 from src.repositories.models import Base
 from src.repositories.sql_ballot_repository import SqlBallotRepository
+from src.services.crypto_service import CryptoService
 from testcontainers.postgres import PostgresContainer
 
 
@@ -29,7 +30,7 @@ async def setup_database(db_url: str):
 
 
 @pytest_asyncio.fixture
-async def db_session(db_url: str, _):
+async def db_session(db_url: str, setup_database):
     engine = create_async_engine(db_url)
     Session = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with Session() as session:
@@ -42,46 +43,87 @@ async def repository(db_session: AsyncSession):
     return SqlBallotRepository(db_session)
 
 
+@pytest.fixture
+def crypto():
+    return CryptoService()
+
+
 @pytest.mark.asyncio
-async def test_create_and_get_ballot(repository: SqlBallotRepository):
-    bc = BallotCreate(
-        measure="SQL Test Ballot", options=["Yes", "No"], allow_write_in=True
+async def test_create_and_get_ballot(
+    repository: SqlBallotRepository, crypto: CryptoService
+):
+    ballot_id = secrets.token_urlsafe(16)
+    keyset = crypto.generate_ballot_keyset()
+    enc_dek = crypto.encrypt_ballot_keyset(keyset, ballot_id)
+    enc_measure = crypto.encrypt_string("SQL Test", keyset, context="measure")
+    enc_options = [crypto.encrypt_string("Yes", keyset, context="option")]
+
+    table = await repository.create_ballot_record(
+        ballot_id=ballot_id,
+        encrypted_measure=enc_measure,
+        encrypted_dek=enc_dek,
+        options=enc_options,
+        allow_write_in=True,
+        start_time=None,
+        end_time=None,
     )
-    ballot = await repository.create(bc)
-    assert ballot.ballot_id is not None
-    assert ballot.measure == "SQL Test Ballot"
-    assert "Yes" in ballot.options
-    assert "No" in ballot.options
+    assert table.id == ballot_id
+    assert table.encrypted_measure == enc_measure
 
-    fetched = await repository.get_by_id(ballot.ballot_id)
+    fetched = await repository.get_by_id(ballot_id)
     assert fetched is not None
-    assert fetched.measure == "SQL Test Ballot"
+    assert fetched.encrypted_measure == enc_measure
 
 
 @pytest.mark.asyncio
-async def test_list_all(repository: SqlBallotRepository):
-    bc = BallotCreate(measure="Ballot 1", options=["A", "B"], allow_write_in=False)
-    _ = await repository.create(bc)
+async def test_list_all(repository: SqlBallotRepository, crypto: CryptoService):
+    ballot_id = secrets.token_urlsafe(16)
+    keyset = crypto.generate_ballot_keyset()
+    enc_dek = crypto.encrypt_ballot_keyset(keyset, ballot_id)
+
+    await repository.create_ballot_record(
+        ballot_id=ballot_id,
+        encrypted_measure=crypto.encrypt_string("Ballot 1", keyset, context="measure"),
+        encrypted_dek=enc_dek,
+        options=[],
+        allow_write_in=False,
+        start_time=None,
+        end_time=None,
+    )
 
     ballots = await repository.list_all()
     assert len(ballots) >= 1
-    assert any(b.measure == "Ballot 1" for b in ballots)
+    assert any(b.id == ballot_id for b in ballots)
 
 
 @pytest.mark.asyncio
-async def test_add_vote_and_tally(repository: SqlBallotRepository):
-    bc = BallotCreate(
-        measure="Vote Test", options=["Option 1", "Option 2"], allow_write_in=True
+async def test_add_vote_and_tally(
+    repository: SqlBallotRepository, crypto: CryptoService
+):
+    ballot_id = secrets.token_urlsafe(16)
+    keyset = crypto.generate_ballot_keyset()
+    enc_dek = crypto.encrypt_ballot_keyset(keyset, ballot_id)
+
+    table = await repository.create_ballot_record(
+        ballot_id=ballot_id,
+        encrypted_measure=crypto.encrypt_string("Vote Test", keyset, context="measure"),
+        encrypted_dek=enc_dek,
+        options=[crypto.encrypt_string("Opt 1", keyset, context="option")],
+        allow_write_in=True,
+        start_time=None,
+        end_time=None,
     )
-    ballot = await repository.create(bc)
+    opt_1_id = table.options[0].id
 
-    await repository.add_vote(ballot.ballot_id, "Option 1")
-    await repository.add_vote(ballot.ballot_id, "Option 1")
-    await repository.add_vote(ballot.ballot_id, "Write-in")
+    await repository.add_vote(ballot_id, opt_1_id)
 
-    tallies = await repository.get_tallies(ballot.ballot_id)
-    tally_dict = {t.option: t.count for t in tallies}
+    # Add write-in
+    enc_write_in = crypto.encrypt_string("My Write-in", keyset, context="option")
+    write_in_id = await repository.add_write_in_option(ballot_id, enc_write_in)
+    await repository.add_vote(ballot_id, write_in_id)
 
-    assert tally_dict["Option 1"] == 2
-    assert tally_dict["Option 2"] == 0
-    assert tally_dict["Write-in"] == 1
+    tallies = await repository.get_tallies(ballot_id)
+    tally_dict = {oid: count for oid, count in tallies}
+
+    assert tally_dict[opt_1_id] == 1
+    assert tally_dict[write_in_id] == 1

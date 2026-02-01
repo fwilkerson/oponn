@@ -43,7 +43,8 @@ class BallotTable(Base):
         "UserTable", back_populates="ballots"
     )
 
-    measure: Mapped[str] = mapped_column(String(255), nullable=False)
+    encrypted_measure: Mapped[str] = mapped_column(String(512), nullable=False)
+    encrypted_dek: Mapped[str] = mapped_column(String(1024), nullable=False)
     allow_write_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     start_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -66,10 +67,14 @@ class OptionTable(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     ballot_id: Mapped[str] = mapped_column(ForeignKey("ballots.id"), nullable=False)
-    text: Mapped[str] = mapped_column(String(64), nullable=False)
+    encrypted_text: Mapped[str] = mapped_column(String(512), nullable=False)
+    is_write_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     ballot: Mapped["BallotTable"] = relationship(
         "BallotTable", back_populates="options"
+    )
+    votes: Mapped[list["VoteTable"]] = relationship(
+        "VoteTable", back_populates="option", cascade="all, delete-orphan"
     )
 
 
@@ -79,6 +84,7 @@ class VoteTable(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     ballot_id: Mapped[str] = mapped_column(ForeignKey("ballots.id"), nullable=False)
-    option_text: Mapped[str] = mapped_column(String(64), nullable=False)
+    option_id: Mapped[int] = mapped_column(ForeignKey("options.id"), nullable=False)
 
     ballot: Mapped["BallotTable"] = relationship("BallotTable", back_populates="votes")
+    option: Mapped["OptionTable"] = relationship("OptionTable", back_populates="votes")

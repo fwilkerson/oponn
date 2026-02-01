@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, Form, Header, HTTPException, Request
 from fastapi.templating import Jinja2Templates
@@ -13,21 +13,45 @@ from .repositories.sql_user_repository import SqlUserRepository
 from .repositories.user_repository import InMemoryUserRepository
 from .services.auth_service import AuthService
 from .services.ballot_service import BallotService
+from .services.crypto_service import CryptoService
+from redis import asyncio as aioredis
 
 # Infrastructure singletons
 templates = Jinja2Templates(directory="templates")
 
 # Register template globals
-templates.env.globals.update(get_ballot_status=BallotService.get_status)  # pyright: ignore[reportUnknownMemberType]
+templates.env.globals.update(get_ballot_status=BallotService.get_status)
 
 CSRF_COOKIE_NAME = "oponn_csrf_token"
 OPONN_ENV = os.getenv("OPONN_ENV", "development").lower()
+REDIS_URL = os.getenv("REDIS_URL")
+
+# Initialize Redis
+_redis_client: aioredis.Redis | None = (
+    aioredis.from_url(REDIS_URL, decode_responses=False) if REDIS_URL else None
+)
+
+_crypto_service: CryptoService | None = None
+
+
+def get_crypto_service() -> CryptoService:
+    global _crypto_service
+    ks = os.getenv("OPONN_MASTER_KEYSET")
+    if _crypto_service is None:
+        _crypto_service = CryptoService(
+            master_keyset_json=ks, redis_client=_redis_client
+        )
+    elif ks:
+        # Update existing service if keyset changed (mostly for tests)
+        _crypto_service.__init__(master_keyset_json=ks, redis_client=_redis_client)
+    return _crypto_service
+
 
 # Dependency Validation
 if OPONN_ENV == "production":
     if not os.getenv("DATABASE_URL"):
         raise RuntimeError("DATABASE_URL must be set in production mode")
-    if not os.getenv("REDIS_URL"):
+    if not REDIS_URL:
         raise RuntimeError("REDIS_URL must be set in production mode")
 
 # In-memory repo singletons for when DATABASE_URL is not set
@@ -35,7 +59,9 @@ _in_memory_ballot_repo = InMemoryBallotRepository()
 _in_memory_user_repo = InMemoryUserRepository()
 
 _ballot_service = BallotService(
-    _in_memory_ballot_repo, redis_url=os.getenv("REDIS_URL")
+    _in_memory_ballot_repo,
+    crypto=cast(CryptoService, cast(object, None)),
+    redis_url=REDIS_URL,
 )
 _auth_service = AuthService(_in_memory_user_repo)
 
@@ -57,6 +83,8 @@ def get_ballot_service(
     If DATABASE_URL is set, it uses SqlBallotRepository with the current session.
     Otherwise, it uses the global InMemoryBallotRepository.
     """
+    _ballot_service.crypto = get_crypto_service()
+
     if os.getenv("DATABASE_URL"):
         if session is None:
             return _ballot_service

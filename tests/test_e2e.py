@@ -31,15 +31,22 @@ async def test_create_ballot_and_vote_functional(server_url: str):
         soup = BeautifulSoup(response.text, "html.parser")
         assert "Functional Test Ballot" in soup.get_text()
 
-        # Verify options are present
-        options = [label.get_text().strip() for label in soup.find_all("label")]
-        assert "Option X" in options
-        assert "Option Y" in options
+        # Verify options are present and get an ID
+        option_labels = soup.find_all("label", class_="radio-label")
+        option_x_id = None
+        for label in option_labels:
+            if "Option X" in label.get_text():
+                input_el = label.find("input")
+                if input_el:
+                    option_x_id = input_el["value"]
+                break
+
+        assert option_x_id is not None
 
         # 3. Cast a vote
         response = await client.post(
             f"{server_url}/vote/{ballot_id}",
-            data={"option": "Option X"},
+            data={"option_id": option_x_id},
             follow_redirects=False,
         )
         assert response.status_code == 303  # Redirect to results
@@ -113,8 +120,19 @@ async def test_sse_live_updates_functional(server_url: str):
                 break
 
             # 3. Vote in background
+            # First get the ID
+            vote_page = await client.get(f"{server_url}/vote/{ballot_id}")
+            soup = BeautifulSoup(vote_page.text, "html.parser")
+            yes_id = None
+            for label in soup.find_all("label", class_="radio-label"):
+                if "Yes" in label.get_text():
+                    input_el = label.find("input")
+                    if input_el:
+                        yes_id = input_el["value"]
+                    break
+
             _ = await client.post(
-                f"{server_url}/vote/{ballot_id}", data={"option": "Yes"}
+                f"{server_url}/vote/{ballot_id}", data={"option_id": yes_id}
             )
 
             # 4. Check for update event

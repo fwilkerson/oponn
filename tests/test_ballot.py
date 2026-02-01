@@ -77,11 +77,20 @@ async def test_full_ballot_lifecycle(client: TestClient):
     # 3. Check vote page
     response = client.get(f"/vote/{ballot_id}")
     assert response.status_code == 200
+    soup = BeautifulSoup(response.text, "html.parser")
+    option_alpha_id = None
+    for label in soup.find_all("label", class_="radio-label"):
+        if "Alpha" in label.get_text():
+            input_el = label.find("input")
+            if input_el:
+                option_alpha_id = input_el["value"]
+            break
+    assert option_alpha_id is not None
 
     # 4. Cast a vote
     response = client.post(
         f"/vote/{ballot_id}",
-        data={"option": "Alpha"},
+        data={"option_id": option_alpha_id},
         follow_redirects=False,
     )
     assert response.status_code == 303

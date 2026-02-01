@@ -4,6 +4,7 @@ import pytest
 from src.models.ballot_models import BallotCreate, Vote
 from src.repositories.ballot_repository import InMemoryBallotRepository
 from src.services.ballot_service import BallotService
+from src.services.crypto_service import CryptoService
 
 
 @pytest.mark.asyncio
@@ -12,14 +13,20 @@ async def test_concurrent_voting_consistency():
     Simulates many concurrent users voting on the same ballot
     to ensure the Lock implementation prevents data loss.
     """
+    from tests.conftest import TEST_KEYSET
+
     repo = InMemoryBallotRepository()
-    service = BallotService(repo)
+    crypto = CryptoService(master_keyset_json=TEST_KEYSET)
+    service = BallotService(repo, crypto=crypto)
 
     # Create a ballot
     bc = BallotCreate(
         measure="Concurrent Test", options=["Option A", "Option B"], allow_write_in=True
     )
     ballot = await service.create_ballot(bc)
+    option_a_id = [oid for oid, txt in ballot.option_map.items() if txt == "Option A"][
+        0
+    ]
 
     num_users = 50
     votes_per_user = 20
@@ -28,7 +35,7 @@ async def test_concurrent_voting_consistency():
     async def user_task():
         for _ in range(votes_per_user):
             # Mix of predefined and write-in votes
-            vote = Vote(option="Option A", is_write_in=False)
+            vote = Vote(option_id=option_a_id, is_write_in=False)
             await service.record_vote(ballot.ballot_id, vote)
 
             # Brief yield to encourage context switching
@@ -48,25 +55,30 @@ async def test_concurrent_voting_consistency():
 
 @pytest.mark.asyncio
 async def test_high_concurrency_mixed_options():
+    from tests.conftest import TEST_KEYSET
+
     repo = InMemoryBallotRepository()
-    service = BallotService(repo)
+    crypto = CryptoService(master_keyset_json=TEST_KEYSET)
+    service = BallotService(repo, crypto=crypto)
 
     bc = BallotCreate(
         measure="Mixed Concurrent", options=["A", "B"], allow_write_in=True
     )
     ballot = await service.create_ballot(bc)
+    option_a_id = [oid for oid, txt in ballot.option_map.items() if txt == "A"][0]
+    option_b_id = [oid for oid, txt in ballot.option_map.items() if txt == "B"][0]
 
     num_tasks = 100
 
     async def vote_a():
-        await service.record_vote(ballot.ballot_id, Vote(option="A"))
+        await service.record_vote(ballot.ballot_id, Vote(option_id=option_a_id))
 
     async def vote_b():
-        await service.record_vote(ballot.ballot_id, Vote(option="B"))
+        await service.record_vote(ballot.ballot_id, Vote(option_id=option_b_id))
 
     async def vote_write_in(i):
         await service.record_vote(
-            ballot.ballot_id, Vote(option=f"WriteIn_{i}", is_write_in=True)
+            ballot.ballot_id, Vote(write_in_value=f"WriteIn_{i}", is_write_in=True)
         )
 
     tasks = []

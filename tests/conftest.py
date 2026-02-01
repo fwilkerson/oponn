@@ -11,7 +11,7 @@ from src.main import app
 from src.repositories.ballot_repository import InMemoryBallotRepository
 
 
-def pytest_assertrepr_compare(op, left, right):
+def pytest_assertrepr_compare(op: str, left: object, right: object) -> list[str] | None:
     """Custom assertion representation for HTML string comparisons."""
     if (
         isinstance(left, str)
@@ -62,11 +62,17 @@ def reset_service():
     _ballot_service._sse_queues.clear()
     _ballot_service._locks.clear()
 
+    # Reset Crypto Cache
+    if _ballot_service.crypto:
+        _ballot_service.crypto._l1_cache.clear()
+
     # Reset in-memory repo if that's what we are using
     _ballot_repo = _ballot_service.repository
     if isinstance(_ballot_repo, InMemoryBallotRepository):
         _ballot_repo.ballots_db.clear()
         _ballot_repo.votes_db.clear()
+        _ballot_repo.options_db.clear()
+        _ballot_repo._opt_id_counter = 1
 
 
 @pytest.fixture
@@ -110,3 +116,22 @@ def server_url():
     server.should_exit = True
     thread.join(timeout=2)
     os.environ.pop("OPONN_SKIP_CSRF", None)
+
+
+TEST_KEYSET = """{
+  "primaryKeyId": 399479480,
+  "key": [
+    {
+      "keyData": {
+        "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
+        "value": "GiDmiIrGdkQtHk2NdoLPaEutNj6l294XCeqWuXcjcY1yxQ==",
+        "keyMaterialType": "SYMMETRIC"
+      },
+      "status": "ENABLED",
+      "keyId": 399479480,
+      "outputPrefixType": "TINK"
+    }
+  ]
+}"""
+
+os.environ["OPONN_MASTER_KEYSET"] = TEST_KEYSET

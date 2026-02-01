@@ -49,8 +49,21 @@ async def test_sse_updates_robust(server_url: str):
             # 3. Cast a vote in a separate task
             async def cast_vote():
                 await asyncio.sleep(0.5)
+                # Get the ID first
+                from bs4 import BeautifulSoup
+
+                vote_page = await client.get(f"{server_url}/vote/{ballot_id}")
+                soup = BeautifulSoup(vote_page.text, "html.parser")
+                yes_id = None
+                for label in soup.find_all("label", class_="radio-label"):
+                    if "Yes" in label.get_text():
+                        input_el = label.find("input")
+                        if input_el:
+                            yes_id = input_el["value"]
+                        break
+
                 _ = await client.post(
-                    f"{server_url}/vote/{ballot_id}", data={"option": "Yes"}
+                    f"{server_url}/vote/{ballot_id}", data={"option_id": yes_id}
                 )
 
             vote_task = asyncio.create_task(cast_vote())

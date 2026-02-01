@@ -70,7 +70,7 @@ def test_vote_write_in_length_validation(client: TestClient):
     # Vote with too long write-in
     response = client.post(
         f"/vote/{ballot_id}",
-        data={"option": "__write_in__", "write_in_value": "w" * 65},
+        data={"option_id": "__write_in__", "write_in_value": "w" * 65},
     )
     assert response.status_code == 200
     assert "at most 64 characters" in response.text
