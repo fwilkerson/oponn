@@ -1,18 +1,18 @@
 import logging
-import os
 import sys
 
 import structlog
 
+from .config import ProductionSettings, settings
+
 
 def configure_logging():
     """
-    Configures structlog and standard library logging.
-    - Development: Pretty colored console output.
-    - Production: JSON output for machine parsing.
+    Configures structlog to output JSON in production/testing
+    and pretty-printed text in development.
     """
-    oponn_env = os.getenv("OPONN_ENV", "development").lower()
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
+    log_level = settings.log_level
 
     shared_processors = [
         structlog.contextvars.merge_contextvars,
@@ -24,7 +24,7 @@ def configure_logging():
         structlog.processors.UnicodeDecoder(),
     ]
 
-    if oponn_env == "production":
+    if settings.log_format == "json":
         # Production: JSON rendering
         processors = shared_processors + [
             structlog.processors.format_exc_info,

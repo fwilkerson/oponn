@@ -6,6 +6,13 @@ CLI := poetry run python manage.py
 
 help: ## Display this help screen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+dev: ## Start the dev server
+	$(CLI) dev
+
+staging: ## Start the staging server
+	$(CLI) staging
+
 prod: ## Start production server
 	$(CLI) prod
 

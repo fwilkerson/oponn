@@ -1,5 +1,4 @@
 import asyncio
-import os
 import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -8,6 +7,7 @@ import structlog
 from fastapi import FastAPI, HTTPException, Request
 from starlette.staticfiles import StaticFiles
 
+from .config import ProductionSettings, TestingSettings, settings
 from .dependencies import CSRF_COOKIE_NAME, get_ballot_service
 from .logging_conf import configure_logging
 from .models.exceptions import (
@@ -31,7 +31,7 @@ async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("lifecycle.startup", msg="Application starting up")
 
     reaper_task = None
-    if os.getenv("OPONN_ENV") != "testing":
+    if not isinstance(settings, TestingSettings):
         reaper_task = asyncio.create_task(background_reaper())
 
     yield
@@ -54,7 +54,7 @@ async def background_reaper():
             await asyncio.sleep(60)  # Reap every 60 seconds
 
             # If we are using SQL, we need to provide a session
-            if os.getenv("DATABASE_URL"):
+            if settings.database_url:
                 session_factory = get_sessionmaker()
                 async with session_factory() as session:
                     service = await get_ballot_service(session=session)
@@ -92,14 +92,12 @@ class CSRFMiddleware:
             if message["type"] == "http.response.start":
                 # Ensure the CSRF cookie is set if not already present
                 if CSRF_COOKIE_NAME not in request.cookies:
-                    from .dependencies import OPONN_ENV
-
                     # We need to add the Set-Cookie header
                     headers = message.get("headers", [])
                     cookie_val = (
                         f"{CSRF_COOKIE_NAME}={token}; HttpOnly; SameSite=Lax; Path=/"
                     )
-                    if OPONN_ENV == "production":
+                    if isinstance(settings, ProductionSettings):
                         cookie_val += "; Secure"
 
                     headers.append((b"set-cookie", cookie_val.encode()))
@@ -116,6 +114,7 @@ app.add_middleware(CSRFMiddleware)
 
 # Infrastructure setup
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # --- Exception Handlers ---
 

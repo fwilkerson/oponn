@@ -1,4 +1,3 @@
-import os
 import asyncio
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
@@ -7,7 +6,7 @@ from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+from .config import settings
 
 # Cache engines and sessionmakers by event loop to avoid cross-loop contamination
 _engines: dict[asyncio.AbstractEventLoop, AsyncEngine] = {}
@@ -19,9 +18,10 @@ _session_factories: dict[
 def get_engine() -> AsyncEngine:
     loop = asyncio.get_running_loop()
     if loop not in _engines:
-        if not DATABASE_URL:
+        if settings.database_url is None:
             raise RuntimeError("DATABASE_URL not set")
-        _engines[loop] = create_async_engine(DATABASE_URL)
+        database_url = str(settings.database_url)
+        _engines[loop] = create_async_engine(database_url)
     return _engines[loop]
 
 

@@ -8,7 +8,6 @@ import typer
 from dotenv import load_dotenv
 
 # Import tool logic directly
-from tools.generate_keyset import generate_master_keyset
 from tools.simulate_votes import simulate as run_simulation
 from tools.generate_migration import run_migration_generation
 
@@ -34,16 +33,17 @@ def run_cmd(command: List[str], env: Optional[dict] = None):
 
 
 def get_base_env(env_name: str = "development") -> dict:
-    load_dotenv()
+    """
+    Prepares the environment for sub-commands.
+    Loads .env and then overrides with .env.{env_name} if it exists.
+    """
+    load_dotenv(".env")
+    env_file = f".env.{env_name}"
+    if os.path.exists(env_file):
+        load_dotenv(env_file, override=True)
+
     env = os.environ.copy()
     env["OPONN_ENV"] = env_name
-
-    if "DATABASE_URL" not in env:
-        env["DATABASE_URL"] = (
-            "postgresql+asyncpg://oponn_user:oponn_password@localhost:5432/oponn_db"
-        )
-    if "REDIS_URL" not in env:
-        env["REDIS_URL"] = "redis://localhost:6379"
     return env
 
 
@@ -55,6 +55,25 @@ def dev():
     """[bold cyan]START[/bold cyan] development server with hot-reload."""
     env = get_base_env("development")
     run_cmd(["uvicorn", "src.main:app", "--reload"], env=env)
+
+
+@app.command()
+def staging(workers: int = 2):
+    """[bold yellow]START[/bold yellow] staging server (Gunicorn + LocalStack)."""
+    env = get_base_env("staging")
+    run_cmd(
+        [
+            "gunicorn",
+            "-k",
+            "uvicorn.workers.UvicornWorker",
+            "-w",
+            str(workers),
+            "--bind",
+            "0.0.0.0:8000",
+            "src.main:app",
+        ],
+        env=env,
+    )
 
 
 @app.command()
@@ -76,11 +95,77 @@ def prod(workers: int = 2):
     )
 
 
+def setup_localstack_kms():
+    """Initializes a KMS key in LocalStack if it's running."""
+
+    from rich import print as rprint
+
+    try:
+        import boto3
+
+    except ImportError:
+        rprint(
+            "[yellow]Note:[/yellow] boto3 not installed, skipping LocalStack KMS setup."
+        )
+
+        return
+
+    from botocore.exceptions import ClientError
+
+    alias_name = "alias/oponn-local-key"
+    try:
+        rprint("[bold dim]Checking LocalStack KMS...[/bold dim]")
+
+        # Use a short timeout so we don't hang if LocalStack isn't ready
+        client = boto3.client(
+            "kms",
+            endpoint_url="http://localhost:4566",
+            region_name="us-east-1",
+            aws_access_key_id="test",
+            aws_secret_access_key="test",
+        )
+
+        # Check if our alias already exists
+        try:
+            client.describe_key(KeyId=alias_name)
+            rprint(
+                f"[bold green]INFO:[/bold green] Local KMS key already exists: [bold cyan]{alias_name}[/bold cyan]"
+            )
+            rprint(
+                f"Ensure your .env has: [bold yellow]OPONN_KMS_KEY_ID={alias_name}[/bold yellow]\n"
+            )
+            return
+        except ClientError:
+            # Alias doesn't exist, proceed to create
+            pass
+
+        response = client.create_key(
+            Description="Oponn Local Dev Key",
+        )
+        key_id = response["KeyMetadata"]["KeyId"]
+
+        # Create the stable alias
+        client.create_alias(AliasName=alias_name, TargetKeyId=key_id)
+
+        rprint(
+            f"\n[bold green]SUCCESS:[/bold green] Created LocalStack KMS Key and Alias: [bold cyan]{alias_name}[/bold cyan]"
+        )
+        rprint(
+            f"Add this to your .env for a stable dev experience: [bold yellow]OPONN_KMS_KEY_ID={alias_name}[/bold yellow]\n"
+        )
+
+    except Exception as e:
+        rprint(f"[red]Error:[/red] Failed to setup LocalStack KMS: {e}")
+        rprint("[dim]Ensure LocalStack is running at http://localhost:4566[/dim]")
+
+
 @app.command()
 def infra(action: str = typer.Argument(..., help="up, down, purge")):
-    """[bold yellow]MANAGE[/bold yellow] Postgres & Redis (Docker)."""
+    """[bold yellow]MANAGE[/bold yellow] Postgres, Redis, and LocalStack (Docker)."""
     if action == "up":
         run_cmd(["docker-compose", "up", "-d"])
+        # Give LocalStack a moment to start and then try to init the key
+        setup_localstack_kms()
     elif action == "down":
         run_cmd(["docker-compose", "down"])
     elif action == "purge":
@@ -103,12 +188,6 @@ def db(
         run_migration_generation(message)
     elif action == "upgrade":
         run_cmd(["alembic", "upgrade", "head"], env=env)
-
-
-@app.command()
-def keyset():
-    """[bold green]GENERATE[/bold green] a new master keyset."""
-    print(generate_master_keyset())
 
 
 @app.command()

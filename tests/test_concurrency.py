@@ -2,8 +2,8 @@ import asyncio
 
 from src.models.ballot_models import BallotCreate, Vote
 from src.repositories.ballot_repository import InMemoryBallotRepository
-from src.services.ballot_service import BallotService, BallotStateManager
-from src.services.crypto_service import CryptoService
+from src.services.ballot_service import BallotService
+from src.dependencies import get_crypto_service, get_ballot_state_manager
 
 
 async def test_concurrent_voting_consistency():
@@ -11,11 +11,9 @@ async def test_concurrent_voting_consistency():
     Simulates many concurrent users voting on the same ballot
     to ensure the Lock implementation prevents data loss.
     """
-    from tests.conftest import TEST_KEYSET
-
     repo = InMemoryBallotRepository()
-    crypto = CryptoService(master_keyset_json=TEST_KEYSET)
-    state = BallotStateManager()
+    crypto = await get_crypto_service()
+    state = await get_ballot_state_manager()
     service = BallotService(repo, crypto=crypto, state_manager=state)
 
     # Create a ballot
@@ -53,11 +51,9 @@ async def test_concurrent_voting_consistency():
 
 
 async def test_high_concurrency_mixed_options():
-    from tests.conftest import TEST_KEYSET
-
     repo = InMemoryBallotRepository()
-    crypto = CryptoService(master_keyset_json=TEST_KEYSET)
-    state = BallotStateManager()
+    crypto = await get_crypto_service()
+    state = await get_ballot_state_manager()
     service = BallotService(repo, crypto=crypto, state_manager=state)
 
     bc = BallotCreate(

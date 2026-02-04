@@ -1,36 +1,15 @@
-import pytest
 import pytest_asyncio
 import secrets
+import os
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from src.repositories.models import Base
 from src.repositories.sql_ballot_repository import SqlBallotRepository
 from src.services.crypto_service import CryptoService
-from testcontainers.postgres import PostgresContainer
-
-
-@pytest.fixture(scope="session")
-def postgres_container():
-    with PostgresContainer("postgres:16-alpine") as postgres:
-        yield postgres
-
-
-@pytest.fixture(scope="session")
-def db_url(postgres_container):
-    return postgres_container.get_connection_url().replace("psycopg2", "asyncpg")
-
-
-@pytest_asyncio.fixture(scope="session")
-async def setup_database(db_url: str):
-    # Run migrations
-    engine = create_async_engine(db_url)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await engine.dispose()
-    yield
 
 
 @pytest_asyncio.fixture
-async def db_session(db_url: str, setup_database):
+async def db_session():
+    db_url = os.getenv("DATABASE_URL")
+    assert db_url is not None, "DATABASE_URL must be set"
     engine = create_async_engine(db_url)
     Session = async_sessionmaker(bind=engine, expire_on_commit=False)
     async with Session() as session:
@@ -43,9 +22,11 @@ async def repository(db_session: AsyncSession):
     return SqlBallotRepository(db_session)
 
 
-@pytest.fixture
-def crypto():
-    return CryptoService()
+@pytest_asyncio.fixture
+async def crypto():
+    from src.dependencies import get_crypto_service
+
+    return await get_crypto_service()
 
 
 async def test_create_and_get_ballot(
@@ -53,7 +34,7 @@ async def test_create_and_get_ballot(
 ):
     ballot_id = secrets.token_urlsafe(16)
     keyset = crypto.generate_ballot_keyset()
-    enc_dek = crypto.encrypt_ballot_keyset(keyset, ballot_id)
+    enc_dek = await crypto.encrypt_ballot_keyset(keyset, ballot_id)
     enc_measure = crypto.encrypt_string("SQL Test", keyset, context="measure")
     enc_options = [crypto.encrypt_string("Yes", keyset, context="option")]
 
@@ -77,7 +58,7 @@ async def test_create_and_get_ballot(
 async def test_list_all(repository: SqlBallotRepository, crypto: CryptoService):
     ballot_id = secrets.token_urlsafe(16)
     keyset = crypto.generate_ballot_keyset()
-    enc_dek = crypto.encrypt_ballot_keyset(keyset, ballot_id)
+    enc_dek = await crypto.encrypt_ballot_keyset(keyset, ballot_id)
 
     await repository.create_ballot_record(
         ballot_id=ballot_id,
@@ -99,7 +80,7 @@ async def test_add_vote_and_tally(
 ):
     ballot_id = secrets.token_urlsafe(16)
     keyset = crypto.generate_ballot_keyset()
-    enc_dek = crypto.encrypt_ballot_keyset(keyset, ballot_id)
+    enc_dek = await crypto.encrypt_ballot_keyset(keyset, ballot_id)
 
     table = await repository.create_ballot_record(
         ballot_id=ballot_id,

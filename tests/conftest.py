@@ -1,4 +1,10 @@
+# ruff: noqa: E402
 import os
+
+# Set environment to testing before any other imports
+os.environ["OPONN_ENV"] = "testing"
+os.environ["OPONN_SKIP_CSRF"] = "true"
+
 import socket
 import threading
 import time
@@ -16,6 +22,68 @@ from src.dependencies import (
 )
 from src.database import get_engine
 from src.main import app
+from src.config import settings
+from testcontainers.postgres import PostgresContainer
+from testcontainers.redis import RedisContainer
+from testcontainers.localstack import LocalStackContainer
+from sqlalchemy.ext.asyncio import create_async_engine
+from src.repositories.models import Base
+
+
+@pytest.fixture(scope="session", autouse=True)
+def infra_containers():
+    """Starts Postgres, Redis, and LocalStack containers for the entire test session."""
+    with (
+        PostgresContainer("postgres:16-alpine") as postgres,
+        RedisContainer("redis:7-alpine") as redis,
+        LocalStackContainer("localstack/localstack:latest") as localstack,
+    ):
+        # Get connection URLs
+        db_url = postgres.get_connection_url().replace("psycopg2", "asyncpg")
+        redis_url = (
+            f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}"
+        )
+        ls_endpoint = localstack.get_url()
+
+        # Set environment variables for the application and tests to use
+        os.environ["DATABASE_URL"] = db_url
+        os.environ["REDIS_URL"] = redis_url
+        os.environ["LOCALSTACK_ENDPOINT"] = ls_endpoint
+
+        # Initialize KMS key in LocalStack
+        import boto3
+
+        kms = boto3.client(
+            "kms",
+            endpoint_url=ls_endpoint,
+            region_name="us-east-1",
+            aws_access_key_id="test",
+            aws_secret_access_key="test",
+        )
+        response = kms.create_key(Description="Test KEK")
+        os.environ["OPONN_KMS_KEY_ID"] = response["KeyMetadata"]["KeyId"]
+
+        # Force settings to reload from updated environment
+        settings.__init__()
+
+        # Sync-style engine for schema creation (using the async engine's run_sync)
+        # We need a temporary engine because the singleton one might not be ready
+        async def init_db():
+            engine = create_async_engine(db_url)
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            await engine.dispose()
+
+        import asyncio
+
+        asyncio.run(init_db())
+
+        yield {
+            "postgres": postgres,
+            "redis": redis,
+            "db_url": db_url,
+            "redis_url": redis_url,
+        }
 
 
 def pytest_assertrepr_compare(op: str, left: object, right: object) -> list[str] | None:
@@ -103,7 +171,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture(scope="session")
-def server_url():
+def server_url(infra_containers):
     """Starts a real server in a background thread for SSE and functional tests."""
     # Disable CSRF for the background server during tests
     os.environ["OPONN_SKIP_CSRF"] = "true"
@@ -132,22 +200,3 @@ def server_url():
     server.should_exit = True
     thread.join(timeout=2)
     os.environ.pop("OPONN_SKIP_CSRF", None)
-
-
-TEST_KEYSET = """{
-  "primaryKeyId": 399479480,
-  "key": [
-    {
-      "keyData": {
-        "typeUrl": "type.googleapis.com/google.crypto.tink.AesGcmKey",
-        "value": "GiDmiIrGdkQtHk2NdoLPaEutNj6l294XCeqWuXcjcY1yxQ==",
-        "keyMaterialType": "SYMMETRIC"
-      },
-      "status": "ENABLED",
-      "keyId": 399479480,
-      "outputPrefixType": "TINK"
-    }
-  ]
-}"""
-
-os.environ["OPONN_MASTER_KEYSET"] = TEST_KEYSET

@@ -46,12 +46,14 @@ class SqlBallotRepository(BallotRepository):
         start_time: datetime | None,
         end_time: datetime | None,
         owner_id: str | None = None,
+        kms_key_id: str = "default",
     ) -> BallotTable:
         ballot = BallotTable(
             id=ballot_id,
             owner_id=owner_id,
             encrypted_measure=encrypted_measure,
             encrypted_dek=encrypted_dek,
+            kms_key_id=kms_key_id,
             allow_write_in=allow_write_in,
             start_time=start_time,
             end_time=end_time,

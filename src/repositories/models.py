@@ -45,6 +45,7 @@ class BallotTable(Base):
 
     encrypted_measure: Mapped[str] = mapped_column(String(512), nullable=False)
     encrypted_dek: Mapped[str] = mapped_column(String(1024), nullable=False)
+    kms_key_id: Mapped[str] = mapped_column(String(255), nullable=False)
     allow_write_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     start_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

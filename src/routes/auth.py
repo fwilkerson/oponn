@@ -1,36 +1,32 @@
-import os
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
-from fastapi_sso.sso.google import GoogleSSO
 from fastapi_sso.sso.github import GithubSSO
+from fastapi_sso.sso.google import GoogleSSO
 from itsdangerous import URLSafeTimedSerializer
 
+from ..config import settings
 from ..dependencies import get_auth_service
 from ..services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev_secret_key_change_in_prod")
+SECRET_KEY = settings.secret_key
 signer = URLSafeTimedSerializer(SECRET_KEY, salt="oponn-auth")
 
 # Initialize SSO
 google_sso = GoogleSSO(
-    client_id=os.getenv("GOOGLE_CLIENT_ID", "mock-id"),
-    client_secret=os.getenv("GOOGLE_CLIENT_SECRET", "mock-secret"),
-    redirect_uri=os.getenv(
-        "GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback/google"
-    ),
+    client_id=settings.google_client_id,
+    client_secret=settings.google_client_secret,
+    redirect_uri="http://localhost:8000/auth/callback/google",
     allow_insecure_http=True,
 )
 
 github_sso = GithubSSO(
-    client_id=os.getenv("GITHUB_CLIENT_ID", "mock-id"),
-    client_secret=os.getenv("GITHUB_CLIENT_SECRET", "mock-secret"),
-    redirect_uri=os.getenv(
-        "GITHUB_REDIRECT_URI", "http://localhost:8000/auth/callback/github"
-    ),
+    client_id=settings.github_client_id,
+    client_secret=settings.github_client_secret,
+    redirect_uri="http://localhost:8000/auth/callback/github",
     allow_insecure_http=True,
 )
 
@@ -39,15 +35,14 @@ github_sso = GithubSSO(
 async def login(provider: str):
     if provider == "google":
         # Check if we should use the mock login flow
-        # We allow mock login if no client ID is provided, allowing testing even in prod-sim
-        if os.getenv("GOOGLE_CLIENT_ID", "mock-id") == "mock-id":
+        if settings.use_mock_auth:
             # Development Mock Login
             return RedirectResponse(
                 url="/auth/callback/google?code=mock_code&state=mock_state"
             )
         return await google_sso.get_login_redirect()
     elif provider == "github":
-        if os.getenv("GITHUB_CLIENT_ID", "mock-id") == "mock-id":
+        if settings.use_mock_auth:
             # Development Mock Login
             return RedirectResponse(
                 url="/auth/callback/github?code=mock_code&state=mock_state"
@@ -68,7 +63,7 @@ async def callback(
 
     if provider == "google":
         # Check if we should use the mock login flow
-        if os.getenv("GOOGLE_CLIENT_ID", "mock-id") == "mock-id":
+        if settings.use_mock_auth:
             # Mock User
             user_email = "dev@example.com"
             provider_id = "mock_google_id_123"
@@ -79,7 +74,7 @@ async def callback(
             user_email = user.email
             provider_id = user.id or user.email  # Fallback if ID is missing
     elif provider == "github":
-        if os.getenv("GITHUB_CLIENT_ID", "mock-id") == "mock-id":
+        if settings.use_mock_auth:
             # Mock User
             user_email = "dev_github@example.com"
             provider_id = "mock_github_id_123"

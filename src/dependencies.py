@@ -1,12 +1,13 @@
 import asyncio
-import os
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import Depends, Form, Header, HTTPException, Request
 from fastapi.templating import Jinja2Templates
+from redis import asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .config import settings
 from .database import get_sessionmaker
 from .repositories.ballot_repository import (
     BallotRepository,
@@ -21,7 +22,6 @@ from .repositories.user_repository import (
 from .services.auth_service import AuthService
 from .services.ballot_service import BallotService, BallotStateManager
 from .services.crypto_service import CryptoService
-from redis import asyncio as aioredis
 
 # Infrastructure singletons
 templates = Jinja2Templates(directory="templates")
@@ -30,8 +30,6 @@ templates = Jinja2Templates(directory="templates")
 templates.env.globals.update(get_ballot_status=BallotService.get_status)
 
 CSRF_COOKIE_NAME = "oponn_csrf_token"
-OPONN_ENV = os.getenv("OPONN_ENV", "development").lower()
-REDIS_URL = os.getenv("REDIS_URL")
 
 # Singletons that MIGHT capture loop state (initialized lazily per loop)
 _redis_clients: dict[asyncio.AbstractEventLoop, aioredis.Redis] = {}
@@ -43,20 +41,44 @@ _in_memory_user_repos: dict[asyncio.AbstractEventLoop, InMemoryUserRepository] =
 
 async def get_redis_client() -> aioredis.Redis | None:
     """Returns a singleton Redis client per loop, initialized on first use."""
-    if not REDIS_URL:
+    if not settings.redis_url:
         return None
     loop = asyncio.get_running_loop()
     if loop not in _redis_clients:
-        _redis_clients[loop] = aioredis.from_url(REDIS_URL, decode_responses=False)
+        _redis_clients[loop] = aioredis.from_url(
+            str(settings.redis_url), decode_responses=False
+        )
     return _redis_clients[loop]
 
 
 async def get_crypto_service() -> CryptoService:
     loop = asyncio.get_running_loop()
     if loop not in _crypto_services:
-        ks = os.getenv("OPONN_MASTER_KEYSET")
+        from .services.kms_provider import (
+            AwsKmsMasterKeyProvider,
+            LocalMasterKeyProvider,
+        )
+
+        provider: MasterKeyProvider
+        if not settings.oponn_kms_key_id:
+            if settings.is_production or settings.is_staging:
+                raise RuntimeError("OPONN_KMS_KEY_ID must be set in staging/production")
+            provider = LocalMasterKeyProvider()
+        else:
+            # Configuration already contains defaults or strictly validated values
+            endpoint = settings.localstack_endpoint
+
+            provider = AwsKmsMasterKeyProvider(
+                key_id=settings.oponn_kms_key_id,
+                endpoint_url=endpoint,
+                access_key=settings.aws_access_key_id,
+                secret_key=settings.aws_secret_access_key,
+                region=settings.aws_region,
+                is_production=settings.is_production,
+            )
+
         _crypto_services[loop] = CryptoService(
-            master_keyset_json=ks, redis_client=await get_redis_client()
+            provider=provider, redis_client=await get_redis_client()
         )
     return _crypto_services[loop]
 
@@ -82,19 +104,9 @@ async def get_in_memory_user_repo() -> InMemoryUserRepository:
     return _in_memory_user_repos[loop]
 
 
-# Dependency Validation
-if OPONN_ENV == "production":
-    if not os.getenv("DATABASE_URL"):
-        raise RuntimeError("DATABASE_URL must be set in production mode")
-    if not REDIS_URL:
-        raise RuntimeError("REDIS_URL must be set in production mode")
-    if not os.getenv("OPONN_MASTER_KEYSET"):
-        raise RuntimeError("OPONN_MASTER_KEYSET must be set in production mode")
-
-
 async def get_db() -> AsyncGenerator[AsyncSession | None, None]:
     """Dependency for getting a DB session."""
-    if os.getenv("DATABASE_URL") is None:
+    if settings.is_in_memory:
         yield None
         return
 
@@ -112,7 +124,7 @@ async def get_ballot_service(
     service while having different request-scoped repositories.
     """
     repo: BallotRepository
-    if os.getenv("DATABASE_URL") and session:
+    if not settings.is_in_memory and session:
         repo = SqlBallotRepository(session)
     else:
         repo = await get_in_memory_ballot_repo()
@@ -132,7 +144,7 @@ async def get_auth_service(
     Dependency that returns a fresh AuthService instance per request.
     """
     repo: UserRepository
-    if os.getenv("DATABASE_URL") and session:
+    if not settings.is_in_memory and session:
         repo = SqlUserRepository(session)
     else:
         repo = await get_in_memory_user_repo()
@@ -153,7 +165,7 @@ async def validate_csrf(
     if request.method == "GET":
         return
 
-    if OPONN_ENV != "production" and os.getenv("OPONN_SKIP_CSRF") == "true":
+    if not settings.is_production and settings.oponn_skip_csrf:
         return
 
     csrf_token = x_csrf_token_form or x_csrf_token_header

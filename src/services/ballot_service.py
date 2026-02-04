@@ -109,7 +109,14 @@ class BallotService:
 
         ballot_id = generate_id()
 
-        enc_dek = self.crypto.encrypt_ballot_keyset(keyset_handle, ballot_id)
+        # Get KMS Key ID from provider for audit/tracking
+        from .kms_provider import AwsKmsMasterKeyProvider
+
+        kms_key_id = "unknown"
+        if isinstance(self.crypto.provider, AwsKmsMasterKeyProvider):
+            kms_key_id = self.crypto.provider.key_id
+
+        enc_dek = await self.crypto.encrypt_ballot_keyset(keyset_handle, ballot_id)
         enc_measure = self.crypto.encrypt_string(
             ballot_create.measure, keyset_handle, context="measure"
         )
@@ -123,6 +130,7 @@ class BallotService:
             ballot_id=ballot_id,
             encrypted_measure=enc_measure,
             encrypted_dek=enc_dek,
+            kms_key_id=kms_key_id,
             options=enc_options,
             allow_write_in=ballot_create.allow_write_in,
             start_time=ballot_create.start_time,
@@ -214,12 +222,16 @@ class BallotService:
 
         # BROADCAST: Notify all workers via Redis Pub/Sub
         updated_counts = await self.get_vote_counts(ballot_id)
-        if self.redis:
-            data = json.dumps([t.model_dump() for t in updated_counts])
-            await self.redis.publish(f"ballot:{ballot_id}:updates", data)
 
+        # 1. Local update (for the worker that handled the request)
         for queue in self.state._sse_queues.get(ballot_id, []):
             await queue.put(updated_counts)
+
+        # 2. Global update (for all other workers)
+        if self.redis:
+            # Pydantic models need model_dump() for JSON serialization
+            data = json.dumps([t.model_dump() for t in updated_counts])
+            await self.redis.publish(f"ballot:{ballot_id}:updates", data)
 
     async def get_vote_counts(self, ballot_id: str) -> list[Tally]:
         """Retrieve current vote counts for a ballot."""
@@ -312,7 +324,12 @@ class BallotService:
         try:
             async for message in pubsub.listen():
                 if message["type"] == "message":
-                    data = json.loads(str(message["data"]))
+                    # message["data"] is bytes because decode_responses=False
+                    raw_data = message["data"]
+                    if isinstance(raw_data, bytes):
+                        data = json.loads(raw_data.decode("utf-8"))
+                    else:
+                        data = json.loads(raw_data)
                     tallies = [Tally(**t) for t in data]
                     await queue.put(tallies)
         finally:

@@ -33,6 +33,7 @@ class BallotRepository(ABC):
         start_time: datetime | None,
         end_time: datetime | None,
         owner_id: str | None = None,
+        kms_key_id: str = "default",
     ) -> BallotTable:
         """Create and persist a new ballot."""
         pass
@@ -92,6 +93,7 @@ class InMemoryBallotRepository(BallotRepository):
         start_time: datetime | None,
         end_time: datetime | None,
         owner_id: str | None = None,
+        kms_key_id: str = "default",
     ) -> BallotTable:
         async with self._lock:
             # Use provided ballot_id instead of generating one
@@ -103,6 +105,7 @@ class InMemoryBallotRepository(BallotRepository):
                 owner_id=owner_id,
                 encrypted_measure=encrypted_measure,
                 encrypted_dek=encrypted_dek,
+                kms_key_id=kms_key_id,
                 allow_write_in=allow_write_in,
                 start_time=start_time,
                 end_time=end_time,

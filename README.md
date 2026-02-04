@@ -56,36 +56,29 @@ make upgrade       # Apply migrations
 
 ## Security & Key Management
 
-Oponn uses column-level encryption to protect sensitive data. In production, a persistent master keyset is required to ensure data can be decrypted across server restarts.
+Oponn uses **Envelope Encryption** to protect sensitive data. Every ballot is encrypted with its own unique Data Encryption Key (DEK), which is itself encrypted by a Master Key (KEK) managed by a **Key Management Service (KMS)**.
 
-### Generating a Master Keyset
-Use the provided tool to generate a new Tink keyset:
-```bash
-poetry run python tools/generate_keyset.py
-```
+### Development (LocalStack)
+For local development, Oponn uses **LocalStack** to provide a mock AWS KMS environment. 
+- Running `make services-up` automatically initializes a KMS key in LocalStack.
+- The CLI will output the `OPONN_KMS_KEY_ID` which should be added to your `.env` file.
 
-### Environment Configuration
-Export the generated JSON keyset as an environment variable or add it to your `.env` file:
-
+### Production (AWS KMS)
+In production, Oponn requires a real AWS KMS Key ID:
 ```bash
 # .env
-OPONN_MASTER_KEYSET='{"primaryKeyId":...}'
-```
-
-Then run in production:
-```bash
-make prod
+OPONN_KMS_KEY_ID="alias/oponn-master-key"
+AWS_REGION="us-east-1"
 ```
 
 ## Development Commands
 
 | Command | Description |
 |---------|-------------|
-| `make test` | Run the full test suite (In-Memory) |
-| `make test-sql` | Run tests against a Postgres container |
-| `make format-ui` | Reformat all HTML/CSS/JS files |
+| `make test` | Run the full test suite (Uses Testcontainers for DB/Redis/KMS) |
+| `make infra-up` | Start Postgres, Redis, and LocalStack |
 | `make lint` | Run Python linting (Ruff) |
-| `make typecheck` | Run strict type checking (Basedpyright) |
+| `make check` | Full QA suite: Lint, Typecheck, and Test |
 
 ---
 *Built with simplicity and horizontal scale in mind.*

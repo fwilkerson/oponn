@@ -22,6 +22,7 @@ dependencies = [
     "fastapi-sso (>=0.17.0)",
     "structlog (>=25.5.0,<26.0.0)",
     "tink (>=1.10.0,<2.0.0)",
+    "aioboto3 (>=15.5.0,<16.0.0)",
 ]
 
 [tool.poetry.scripts]
@@ -42,7 +43,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-timeout = 10
+timeout = 30
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
     "ignore:websockets.server.WebSocketServerProtocol is deprecated:DeprecationWarning",
