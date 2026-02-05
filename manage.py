@@ -2,7 +2,7 @@
 import os
 import subprocess
 import sys
-from typing import List, Optional
+from typing import List
 
 import typer
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ app = typer.Typer(
 )
 
 
-def run_cmd(command: List[str], env: Optional[dict] = None):
+def run_cmd(command: List[str], env: dict | None = None):
     """Executes a shell command with consistent environment handling."""
     if env is None:
         load_dotenv()
@@ -178,16 +178,19 @@ def infra(action: str = typer.Argument(..., help="up, down, purge")):
 @app.command()
 def db(
     action: str = typer.Argument(..., help="migrate, upgrade"),
-    message: Optional[str] = typer.Option(
+    env: str = typer.Option(
+        "", "--env", "-e", help="The environment configuration to use"
+    ),
+    message: str | None = typer.Option(
         None, "--message", "-m", help="Migration message"
     ),
 ):
     """[bold blue]MANAGE[/bold blue] database migrations."""
-    env = get_base_env()
+
     if action == "migrate":
         run_migration_generation(message)
     elif action == "upgrade":
-        run_cmd(["alembic", "upgrade", "head"], env=env)
+        run_cmd(["alembic", "upgrade", "head"], env=get_base_env(env))
 
 
 @app.command()
@@ -255,7 +258,7 @@ def test(ctx: typer.Context):
 
 @app.command()
 def lint(
-    files: Optional[List[str]] = typer.Argument(None, help="Specific files to lint"),
+    files: List[str] | None = typer.Argument(None, help="Specific files to lint"),
     fix: bool = True,
 ):
     """[bold white]LINT[/bold white] & format Python and Templates."""

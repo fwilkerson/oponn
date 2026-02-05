@@ -29,7 +29,7 @@ migrate: ## Generate migration (e.g. make migrate MSG="add users")
 	$(CLI) db migrate --message "$(MSG)"
 
 upgrade: ## Apply migrations
-	$(CLI) db upgrade
+	$(CLI) db upgrade --env "$(ENV)"
 
 keyset: ## Generate master key
 	$(CLI) keyset
