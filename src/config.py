@@ -75,7 +75,7 @@ class DevelopmentSettings(BaseAppSettings):
     """Configuration for development environment."""
 
     oponn_env: Literal["development"] = "development"  # type: ignore
-    log_format: Literal["pretty"] = "pretty"
+    log_format: Literal["pretty"] = "pretty"  # type: ignore
 
 
 class TestingSettings(BaseAppSettings):
@@ -83,14 +83,14 @@ class TestingSettings(BaseAppSettings):
 
     oponn_env: Literal["testing"] = "testing"  # type: ignore
     oponn_skip_csrf: bool = True
-    log_format: Literal["pretty"] = "pretty"
+    log_format: Literal["pretty"] = "pretty"  # type: ignore
 
 
 class StagingSettings(BaseAppSettings):
     """Configuration for staging environment. Mirrors production requirements."""
 
     oponn_env: Literal["staging"] = "staging"  # type: ignore
-    log_format: Literal["pretty"] = "pretty"
+    log_format: Literal["pretty"] = "pretty"  # type: ignore
     use_mock_auth: bool = True
 
     # Enforce required infrastructure
@@ -110,7 +110,7 @@ class ProductionSettings(BaseAppSettings):
     """Configuration for production environment. Enforces strict requirements."""
 
     oponn_env: Literal["production"] = "production"  # type: ignore
-    log_format: Literal["json"] = "json"
+    log_format: Literal["json"] = "json"  # type: ignore
     use_mock_auth: bool = False
 
     # Enforce required infrastructure

@@ -2,14 +2,14 @@
 import os
 import subprocess
 import sys
-from typing import Optional, List
+from typing import List, Optional
 
 import typer
 from dotenv import load_dotenv
+from tools.generate_migration import run_migration_generation
 
 # Import tool logic directly
 from tools.simulate_votes import simulate as run_simulation
-from tools.generate_migration import run_migration_generation
 
 app = typer.Typer(
     help="Oponn CLI: Nordic Terminal Voting Service Toolkit",
@@ -199,38 +199,97 @@ def simulate(ballot_id: str, votes: int = 10):
 # --- Quality Assurance ---
 
 
+@app.command()
+def bootstrap():
+    """[bold cyan]INITIALIZE[/bold cyan] development environment (Git, Pre-commit)."""
+    from rich import print as rprint
+
+    rprint("[bold blue]Setting up Git configuration...[/bold blue]")
+    try:
+        subprocess.run(["git", "config", "core.ignorecase", "false"], check=True)
+        rprint("  - [green]SUCCESS:[/green] core.ignorecase set to false")
+    except Exception as e:
+        rprint(f"  - [red]ERROR:[/red] Failed to set git config: {e}")
+
+    rprint("\n[bold blue]Installing pre-commit hooks...[/bold blue]")
+    try:
+        run_cmd(["pre-commit", "install"])
+        rprint("  - [green]SUCCESS:[/green] pre-commit installed")
+    except Exception:
+        rprint("  - [red]ERROR:[/red] Failed to install pre-commit")
+
+
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True}
 )
 def test(ctx: typer.Context):
-    """[bold green]RUN[/bold green] tests (accepts pytest args)."""
-    env = get_base_env("testing")
-    cmd = [sys.executable, "-m", "pytest"] + ctx.args
-    run_cmd(cmd, env=env)
+    """[bold green]RUN[/bold green] tests in a Linux Docker container for OS parity."""
+    from rich import print as rprint
+
+    rprint("[bold yellow]Building Linux Test Image...[/bold yellow]")
+    run_cmd(["docker", "build", "-t", "oponn-test", "-f", "Dockerfile.test", "."])
+
+    rprint("[bold green]Running tests in Linux Container...[/bold green]")
+    # Use host network to allow the container to reach Postgres/Redis started on host by Testcontainers
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-e",
+        "OPONN_IN_DOCKER=true",
+        "-e",
+        "TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "-v",
+        f"{os.getcwd()}:/app",
+        "--network",
+        "host",
+        "oponn-test",
+        "python3",
+        "-m",
+        "pytest",
+    ] + ctx.args
+    run_cmd(cmd)
 
 
 @app.command()
-def lint(fix: bool = True):
+def lint(
+    files: Optional[List[str]] = typer.Argument(None, help="Specific files to lint"),
+    fix: bool = True,
+):
     """[bold white]LINT[/bold white] & format Python and Templates."""
     flags = ["--fix"] if fix else []
-    run_cmd(
-        [sys.executable, "-m", "ruff", "check", "src", "tests", "tools", "manage.py"]
-        + flags
-    )
-    run_cmd(
-        [sys.executable, "-m", "ruff", "format", "src", "tests", "tools", "manage.py"]
-    )
 
-    dj_flags = ["--reformat"] if fix else ["--check"]
-    run_cmd(
-        [sys.executable, "-m", "djlint", "templates", "--profile", "jinja"] + dj_flags
-    )
+    # If no files provided, default to project directories
+    targets = files if files else ["src", "tests", "tools", "manage.py", "templates"]
+
+    # 1. Python Checks (Ruff)
+    # Filter for .py files or directories
+    py_targets = [
+        t for t in targets if t.endswith(".py") or os.path.isdir(t) and t != "templates"
+    ]
+    if py_targets:
+        run_cmd([sys.executable, "-m", "ruff", "check"] + py_targets + flags)
+        run_cmd([sys.executable, "-m", "ruff", "format"] + py_targets)
+
+    # 2. Template Checks (djLint)
+    # Filter for .html files or the templates directory
+    html_targets = [t for t in targets if t.endswith(".html") or t == "templates"]
+    if html_targets:
+        dj_flags = ["--reformat"] if fix else ["--check"]
+        run_cmd(
+            [sys.executable, "-m", "djlint"]
+            + html_targets
+            + ["--profile", "jinja"]
+            + dj_flags
+        )
 
 
 @app.command()
 def check():
     """[bold red]FULL CHECK[/bold red]: Lint, Typecheck, and Test."""
-    lint(fix=False)
+    lint(None, fix=False)
     run_cmd(["basedpyright", "src", "tests", "tools", "manage.py"])
     env = get_base_env("testing")
     run_cmd([sys.executable, "-m", "pytest"], env=env)

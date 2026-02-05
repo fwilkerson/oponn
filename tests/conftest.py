@@ -30,6 +30,18 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from src.repositories.models import Base
 
 
+def fix_url_for_docker(url: str) -> str:
+    """
+    On macOS Docker Desktop, 'localhost' inside a container refers to the container itself.
+    We need to use 'host.docker.internal' to reach the ports published on the Docker VM.
+    """
+    if os.getenv("OPONN_IN_DOCKER") == "true":
+        return url.replace("localhost", "host.docker.internal").replace(
+            "127.0.0.1", "host.docker.internal"
+        )
+    return url
+
+
 @pytest.fixture(scope="session", autouse=True)
 def infra_containers():
     """Starts Postgres, Redis, and LocalStack containers for the entire test session."""
@@ -39,11 +51,13 @@ def infra_containers():
         LocalStackContainer("localstack/localstack:latest") as localstack,
     ):
         # Get connection URLs
-        db_url = postgres.get_connection_url().replace("psycopg2", "asyncpg")
-        redis_url = (
+        db_url = fix_url_for_docker(
+            postgres.get_connection_url().replace("psycopg2", "asyncpg")
+        )
+        redis_url = fix_url_for_docker(
             f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}"
         )
-        ls_endpoint = localstack.get_url()
+        ls_endpoint = fix_url_for_docker(localstack.get_url())
 
         # Set environment variables for the application and tests to use
         os.environ["DATABASE_URL"] = db_url

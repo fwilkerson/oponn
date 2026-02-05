@@ -81,9 +81,7 @@ class CSRFMiddleware:
         request = Request(scope, receive)
 
         # Get existing token or generate a new one
-        token = request.cookies.get(CSRF_COOKIE_NAME)
-        if not token:
-            token = secrets.token_urlsafe(32)
+        token = request.cookies.get(CSRF_COOKIE_NAME, secrets.token_urlsafe(32))
 
         # Make token available to the request state
         request.state.csrf_token = token

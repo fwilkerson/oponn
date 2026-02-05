@@ -4,22 +4,26 @@ import io
 from typing import Any
 
 import aioboto3
-import tink
-from tink import cleartext_keyset_handle
+from tink import (
+    BinaryKeysetReader,
+    BinaryKeysetWriter,
+    KeysetHandle,
+    aead,
+    cleartext_keyset_handle,
+    new_keyset_handle,
+)
 
 
 class MasterKeyProvider(abc.ABC):
     """Abstract interface for Master Key operations (KEK)."""
 
     @abc.abstractmethod
-    async def encrypt_dek(self, dek_handle: tink.KeysetHandle, ballot_id: str) -> str:
+    async def encrypt_dek(self, dek_handle: KeysetHandle, ballot_id: str) -> str:
         """Encrypts a Tink KeysetHandle (DEK) and returns a base64 string."""
         pass
 
     @abc.abstractmethod
-    async def decrypt_dek(
-        self, encrypted_dek_b64: str, ballot_id: str
-    ) -> tink.KeysetHandle:
+    async def decrypt_dek(self, encrypted_dek_b64: str, ballot_id: str) -> KeysetHandle:
         """Decrypts a base64 string into a Tink KeysetHandle (DEK)."""
         pass
 
@@ -32,16 +36,16 @@ class LocalMasterKeyProvider(MasterKeyProvider):
 
     def __init__(self):
         # Ensure Tink AEAD is registered before we use it
-        tink.aead.register()
+        aead.register()
         # A static keyset for development. DO NOT USE IN PRODUCTION.
         # This allows us to exercise the full Tink pipeline.
-        self.keyset_handle = tink.new_keyset_handle(tink.aead.aead_key_templates.AES128_GCM)
-        self.aead = self.keyset_handle.primitive(tink.aead.Aead)
+        self.keyset_handle = new_keyset_handle(aead.aead_key_templates.AES128_GCM)
+        self.aead = self.keyset_handle.primitive(aead.Aead)
 
-    async def encrypt_dek(self, dek_handle: tink.KeysetHandle, ballot_id: str) -> str:
+    async def encrypt_dek(self, dek_handle: KeysetHandle, ballot_id: str) -> str:
         # 1. Serialize DEK to binary
         out = io.BytesIO()
-        writer = tink.BinaryKeysetWriter(out)
+        writer = BinaryKeysetWriter(out)
         cleartext_keyset_handle.write(writer, dek_handle)
         plaintext_dek = out.getvalue()
 
@@ -49,16 +53,14 @@ class LocalMasterKeyProvider(MasterKeyProvider):
         ciphertext = self.aead.encrypt(plaintext_dek, ballot_id.encode())
         return base64.b64encode(ciphertext).decode()
 
-    async def decrypt_dek(
-        self, encrypted_dek_b64: str, ballot_id: str
-    ) -> tink.KeysetHandle:
+    async def decrypt_dek(self, encrypted_dek_b64: str, ballot_id: str) -> KeysetHandle:
         ciphertext = base64.b64decode(encrypted_dek_b64)
 
         # 1. Decrypt using local AEAD
         plaintext_dek = self.aead.decrypt(ciphertext, ballot_id.encode())
 
         # 2. Deserialize to Tink handle
-        reader = tink.BinaryKeysetReader(plaintext_dek)
+        reader = BinaryKeysetReader(plaintext_dek)
         return cleartext_keyset_handle.read(reader)
 
 
@@ -115,10 +117,10 @@ class AwsKmsMasterKeyProvider(MasterKeyProvider):
         args["verify"] = False
         return args
 
-    async def encrypt_dek(self, dek_handle: tink.KeysetHandle, ballot_id: str) -> str:
+    async def encrypt_dek(self, dek_handle: KeysetHandle, ballot_id: str) -> str:
         # 1. Serialize DEK to binary
         out = io.BytesIO()
-        writer = tink.BinaryKeysetWriter(out)
+        writer = BinaryKeysetWriter(out)
         cleartext_keyset_handle.write(writer, dek_handle)
         plaintext_dek = out.getvalue()
 
@@ -131,9 +133,7 @@ class AwsKmsMasterKeyProvider(MasterKeyProvider):
             )
             return base64.b64encode(response["CiphertextBlob"]).decode()
 
-    async def decrypt_dek(
-        self, encrypted_dek_b64: str, ballot_id: str
-    ) -> tink.KeysetHandle:
+    async def decrypt_dek(self, encrypted_dek_b64: str, ballot_id: str) -> KeysetHandle:
         ciphertext = base64.b64decode(encrypted_dek_b64)
 
         # 1. Decrypt via AWS KMS
@@ -145,5 +145,5 @@ class AwsKmsMasterKeyProvider(MasterKeyProvider):
             plaintext_dek = response["Plaintext"]
 
         # 2. Deserialize to Tink handle
-        reader = tink.BinaryKeysetReader(plaintext_dek)
+        reader = BinaryKeysetReader(plaintext_dek)
         return cleartext_keyset_handle.read(reader)

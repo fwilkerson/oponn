@@ -1,10 +1,17 @@
+import base64
 import io
 import time
-import tink
-from tink import aead
-from tink import cleartext_keyset_handle
-import base64
+
 from redis import asyncio as aioredis
+from tink import (
+    BinaryKeysetReader,
+    BinaryKeysetWriter,
+    KeysetHandle,
+    aead,
+    cleartext_keyset_handle,
+    new_keyset_handle,
+)
+
 from .kms_provider import MasterKeyProvider
 
 
@@ -16,7 +23,7 @@ class CryptoService:
     """
 
     redis: aioredis.Redis | None
-    _l1_cache: dict[str, tuple[tink.KeysetHandle, float]]
+    _l1_cache: dict[str, tuple[KeysetHandle, float]]
     _l1_ttl: int
     provider: MasterKeyProvider
 
@@ -35,7 +42,7 @@ class CryptoService:
 
     async def get_ballot_keyset(
         self, ballot_id: str, encrypted_dek: str | None = None
-    ) -> tink.KeysetHandle:
+    ) -> KeysetHandle:
         """Retrieves a decrypted keyset, checking L1 and L2 caches before hitting the KMS."""
         now = time.time()
 
@@ -55,7 +62,7 @@ class CryptoService:
                 await self.redis.expire(l2_key, 600)  # 10 minutes
 
                 raw_bytes = base64.b64decode(serialized_keyset_b64)
-                reader = tink.BinaryKeysetReader(raw_bytes)
+                reader = BinaryKeysetReader(raw_bytes)
                 # Note: This keyset in Redis is ALREADY decrypted (the "pass")
                 handle = cleartext_keyset_handle.read(reader)
 
@@ -76,7 +83,7 @@ class CryptoService:
         if self.redis:
             # Serialize the decrypted keyset for Redis
             out = io.BytesIO()
-            writer = tink.BinaryKeysetWriter(out)
+            writer = BinaryKeysetWriter(out)
             cleartext_keyset_handle.write(writer, handle)
             await self.redis.setex(
                 l2_key, 600, base64.b64encode(out.getvalue()).decode()
@@ -84,24 +91,24 @@ class CryptoService:
 
         return handle
 
-    def generate_ballot_keyset(self) -> tink.KeysetHandle:
+    def generate_ballot_keyset(self) -> KeysetHandle:
         """Generates a new unique keyset for a ballot."""
-        return tink.new_keyset_handle(aead.aead_key_templates.AES256_GCM)
+        return new_keyset_handle(aead.aead_key_templates.AES256_GCM)
 
     async def encrypt_ballot_keyset(
-        self, keyset_handle: tink.KeysetHandle, ballot_id: str
+        self, keyset_handle: KeysetHandle, ballot_id: str
     ) -> str:
         """Encrypts a ballot keyset using the Master Provider (KEK)."""
         return await self.provider.encrypt_dek(keyset_handle, ballot_id)
 
     async def decrypt_ballot_keyset(
         self, encrypted_keyset_b64: str, ballot_id: str
-    ) -> tink.KeysetHandle:
+    ) -> KeysetHandle:
         """Decrypts a ballot keyset using the Master Provider (KEK)."""
         return await self.provider.decrypt_dek(encrypted_keyset_b64, ballot_id)
 
     def encrypt_string(
-        self, plaintext: str, keyset_handle: tink.KeysetHandle, context: str = ""
+        self, plaintext: str, keyset_handle: KeysetHandle, context: str = ""
     ) -> str:
         """Encrypts a string using the provided ballot keyset."""
         primitive = keyset_handle.primitive(aead.Aead)
@@ -109,7 +116,7 @@ class CryptoService:
         return base64.b64encode(ciphertext).decode()
 
     def decrypt_string(
-        self, ciphertext_b64: str, keyset_handle: tink.KeysetHandle, context: str = ""
+        self, ciphertext_b64: str, keyset_handle: KeysetHandle, context: str = ""
     ) -> str:
         """Decrypts a string using the provided ballot keyset."""
         primitive = keyset_handle.primitive(aead.Aead)

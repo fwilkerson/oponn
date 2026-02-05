@@ -3,7 +3,7 @@ import sys
 
 import structlog
 
-from .config import ProductionSettings, settings
+from .config import settings
 
 
 def configure_logging():

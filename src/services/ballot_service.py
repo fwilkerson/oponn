@@ -12,7 +12,7 @@ from ..models.exceptions import (
     VotingNotOpenError,
 )
 from ..repositories.ballot_repository import BallotRepository
-from ..repositories.models import BallotTable
+from ..repositories.models import BallotTable, generate_id
 from .crypto_service import CryptoService
 
 logger = structlog.stdlib.get_logger()
@@ -103,9 +103,6 @@ class BallotService:
         """Create a new ballot and initialize its SSE client list."""
         # 1. Generate new keyset
         keyset_handle = self.crypto.generate_ballot_keyset()
-
-        # 2. Encrypt metadata
-        from ..repositories.models import generate_id
 
         ballot_id = generate_id()
 

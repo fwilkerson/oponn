@@ -22,6 +22,7 @@ from .repositories.user_repository import (
 from .services.auth_service import AuthService
 from .services.ballot_service import BallotService, BallotStateManager
 from .services.crypto_service import CryptoService
+from .services.kms_provider import MasterKeyProvider
 
 # Infrastructure singletons
 templates = Jinja2Templates(directory="templates")

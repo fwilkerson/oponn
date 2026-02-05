@@ -37,7 +37,10 @@ keyset: ## Generate master key
 simulate: ## Simulate votes: make simulate ID=ballot_id VOTES=10
 	$(CLI) simulate $(ID) --votes $(VOTES)
 
-test: ## Run tests (args via ARGS="...")
+bootstrap: ## Setup local environment (Git, Pre-commit)
+	$(CLI) bootstrap
+
+test: ## Run tests in Docker (args via ARGS="...")
 	$(CLI) test $(ARGS)
 
 lint: ## Lint and format
